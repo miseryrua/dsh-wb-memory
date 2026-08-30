@@ -1,0 +1,44 @@
+{
+  "name": "dsh-wb-memory",
+  "version": "0.8.2",
+  "description": "把 WorkBuddy 的文件化记忆机制带入 DeepSeek Harness：分层注入（全局画像 + 工作区摘要/相关条目 + 今日日志）；记忆源为各 dsh 工作区 .workbuddy/memory/，纯 Markdown 无向量库；含 auto-digest 流水记录、auto-distill 日志提炼、超阈值 LLM 整理与 TTL/回收站治理，并在设置面板提供管理界面。",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "plugin",
+    "memory",
+    "workbuddy"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "test",
+    "cordis.patch.yml",
+    "README.md"
+  ]
+}

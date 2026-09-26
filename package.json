@@ -40,5 +40,13 @@
     "test",
     "cordis.patch.yml",
     "README.md"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miseryrua/dsh-wb-memory.git"
+  },
+  "homepage": "https://github.com/miseryrua/dsh-wb-memory#readme",
+  "bugs": {
+    "url": "https://github.com/miseryrua/dsh-wb-memory/issues"
+  }
 }

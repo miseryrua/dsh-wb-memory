@@ -2,7 +2,7 @@
  * dsh-wb-memory 纯函数冒烟测试（不依赖 cordis 环境）。
  * 运行：node test/smoke.mjs（需 Node 22+）
  */
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -13,8 +13,10 @@ import {
   summarizeEntries,
   jaccard,
   detectDuplicates,
+  searchMemory,
 } from '../lib/retrieve.js'
 import { gcDailyLogs, checkMemorySize, safeTrash, gcTrash, gcArchive, runGc } from '../lib/governance.js'
+import { summaryGate, summaryConfig, summaryInputText, countSummariesToday } from '../lib/summary.js'
 
 let pass = 0
 let fail = 0
@@ -162,6 +164,286 @@ ok(clipped.length === 100, '总长严格受限（100）')
 ok(clipped.startsWith('A') && clipped.endsWith('Z'), '头部与尾部结论都保留')
 ok(clipped.includes('…'), '中段以省略号衔接')
 ok(idx.digestClipEnds('短回复', 100) === '短回复', '短文本原样返回不截断')
+
+console.log('--- index.logicalDayStamp（v8 F1 逻辑日分界）---')
+ok(idx.logicalDayStamp({ dayBoundaryHour: 4 }, new Date(2026, 7, 31, 3, 59)) === '2026-08-30', '03:59 归前一天')
+ok(idx.logicalDayStamp({ dayBoundaryHour: 4 }, new Date(2026, 7, 31, 4, 0)) === '2026-08-31', '04:00 归当天')
+ok(idx.logicalDayStamp({ dayBoundaryHour: 0 }, new Date(2026, 7, 31, 0, 30)) === '2026-08-31', 'dayBoundaryHour=0 退化为日历日')
+ok(idx.logicalDayStamp({ dayBoundaryHour: 4 }, new Date(2026, 2, 1, 2, 0)) === '2026-02-28', '跨月边界：3月1日凌晨归2月28')
+ok(idx.logicalDayStamp({}, new Date(2026, 11, 31, 23, 0)) === '2026-12-31', '白天时刻原样返回')
+
+console.log('--- index.buildWeekSection（v8 N1 近 N 日回顾）---')
+const wdir = mkdtempSync(join(tmpdir(), 'wbmem-w-'))
+try {
+  // 8 个历史日期文件（08-24 ~ 08-31）+ 今天文件（09-01）
+  for (let d = 24; d <= 31; d++) {
+    writeFileSync(join(wdir, `2026-08-${String(d).padStart(2, '0')}.md`), `# 2026-08-${d} 日志\n\n- 21:00【自动】任务${d} → 结论${d}\n`, 'utf8')
+  }
+  writeFileSync(join(wdir, '2026-09-01.md'), '# 2026-09-01 日志\n\n- 09:00【自动】今日流水 → 不该进回顾\n', 'utf8')
+  const wcfg = { weekWindowDays: 6, weekMaxChars: 1200, weekSummaryDailyChars: 400 }
+  const week = idx.buildWeekSection(wdir, wcfg, '2026-09-01')
+  ok(week && week.includes('### 近 6 日回顾'), '标题为「近 6 日回顾」（不叫本周）')
+  ok(week.includes('**08-26**') && week.includes('**08-31**'), '窗口取最近 6 天（08-26 ~ 08-31）')
+  ok(!week.includes('**08-25**'), '窗口外的第 7 个历史日（08-25）不进回顾')
+  ok(!week.includes('09-01') && !week.includes('今日流水'), '今天的文件不进回顾')
+  ok(week.length <= 1200, '总输出 ≤ weekMaxChars')
+  // 小结正文优先于流水行装配（用户裁决的优先级）
+  writeFileSync(
+    join(wdir, '2026-08-31.md'),
+    '# 2026-08-31 日志\n\n## 会话小结 23:30\n修好了逻辑日分界，因为凌晨会话归错天，未竟事项是观察一周成本。\n\n- 21:00【自动】任务 → 结论\n',
+    'utf8',
+  )
+  const week2 = idx.buildWeekSection(wdir, wcfg, '2026-09-01')
+  const sumPos = week2.indexOf('· 小结：')
+  const flowPos = week2.indexOf('21:00【自动】')
+  ok(sumPos >= 0 && flowPos >= 0 && sumPos < flowPos, '会话小结正文优先于流水行装配')
+  ok(idx.buildWeekSection(join(wdir, 'nonexist'), wcfg, '2026-09-01') === null, '目录无日志返回 null')
+} finally {
+  rmSync(wdir, { recursive: true, force: true })
+}
+
+console.log('--- index.buildPinnedSection（v8 N3 置顶记忆）---')
+const pdir = mkdtempSync(join(tmpdir(), 'wbmem-p-'))
+try {
+  ok(idx.buildPinnedSection(pdir, { pinnedMaxChars: 1000 }) === null, 'PINNED.md 不存在返回 null（不影响其余注入）')
+  writeFileSync(join(pdir, 'PINNED.md'), '- [2026-08-31] 充电上限 80%\n- [2026-08-20] 每月校准电池\n', 'utf8')
+  const pin = idx.buildPinnedSection(pdir, { pinnedMaxChars: 1000 })
+  ok(pin.includes('### 置顶记忆') && pin.includes('充电上限 80%'), '置顶段标题与内容注入')
+  const pin2 = idx.buildPinnedSection(pdir, { pinnedMaxChars: 30 })
+  ok(pin2.includes('截断'), '超 pinnedMaxChars 保头截断并标注')
+} finally {
+  rmSync(pdir, { recursive: true, force: true })
+}
+
+console.log('--- retrieve.searchMemory（v8 N2 日期过滤）---')
+// 专用夹具：两条目文本互不重叠，避免 query token 串门干扰断言
+const SEARCH_MD = [
+  '# 项目长期记忆',
+  '',
+  '<!-- tags: alpha / date: 2026-08-01 -->',
+  '## 电池策略',
+  '充电上限设置为百分之八十',
+  '',
+  '<!-- tags: beta / date: 2026-08-20 -->',
+  '## 显示器排查',
+  '外接显示器换线解决 NV-Failsafe',
+  '',
+].join('\n')
+const r1 = searchMemory(SEARCH_MD, { q: '显示器', dateFrom: '2026-08-10', dateTo: '2026-08-25' })
+ok(r1.length === 1 && r1[0].title === '显示器排查', '日期范围内命中（2026-08-20）')
+ok(searchMemory(SEARCH_MD, { q: '充电上限', dateFrom: '2026-08-10', dateTo: '2026-08-25' }).length === 0, '日期范围外被滤除（电池策略 2026-08-01）')
+ok(searchMemory(SEARCH_MD, { q: '显示器', dateFrom: '2026-08-20', dateTo: '2026-08-20' }).length === 1, '闭区间含端点（date_from=date_to=条目日期）')
+ok(searchMemory(SEARCH_MD, { q: '' }).length === 0, '空 query 返回空')
+const NODATE_MD = '## 无日期条目\n没写 frontmatter 的旧记忆正文\n'
+ok(searchMemory(NODATE_MD, { q: '旧记忆', dateFrom: '2999-01-01', dateTo: '2999-12-31' }).length === 1, '无 frontmatter date 的条目不被日期过滤')
+
+console.log('--- index.compactRetryPlan / compactFeedbackText（v8 F2 同轮反馈重试）---')
+const PASS_CHECKS = { nonEmpty: true, shorter: true, underThreshold: true, keptHalfEntries: true }
+ok(idx.compactRetryPlan(PASS_CHECKS, null).retry === false && idx.compactRetryPlan(PASS_CHECKS, null).reason === 'passed', '首轮全过不重试')
+ok(idx.compactRetryPlan({ nonEmpty: true, shorter: true, underThreshold: false, keptHalfEntries: true }, null).retry === true, '校验失败触发重试')
+ok(idx.compactRetryPlan(PASS_CHECKS, new Error('llm timeout')).retry === false && idx.compactRetryPlan(PASS_CHECKS, new Error('llm timeout')).reason === 'llm-error', 'LLM 异常不重试（成本闸，明天再试）')
+const fb = idx.compactFeedbackText(
+  { nonEmpty: true, shorter: true, underThreshold: false, keptHalfEntries: false },
+  { after: 9200, threshold: 8000, newCount: 5, minCount: 6, oldCount: 12, before: 10000 },
+)
+ok(fb.includes('超出阈值 8000 达 1200 字符') && fb.includes('条目数 5 条少于要求的 6 条'), '反馈文本含具体差距数字')
+
+console.log('--- summary.summaryGate / summaryInputText / countSummariesToday（v8 N4 四道闸）---')
+const sc0 = summaryConfig({})
+ok(sc0.on === true && sc0.minUserChars === 300 && sc0.maxPerDay === 8 && sc0.idleMs === 600000, '默认配置：开/300字/8次日/10分钟')
+ok(summaryGate(sc0, { modelReady: true, alreadyDone: false, userChars: 400, countToday: 0 }).pass === true, '全闸通过')
+ok(summaryGate(sc0, { modelReady: true, alreadyDone: false, userChars: 100, countToday: 0 }).reason === 'too-short', '短会话跳过（<300 字不烧 LLM）')
+ok(summaryGate(sc0, { modelReady: true, alreadyDone: false, userChars: 400, countToday: 8 }).reason === 'daily-cap', '当日上限（8 次）跳过')
+ok(summaryGate(sc0, { modelReady: true, alreadyDone: true, userChars: 400, countToday: 0 }).reason === 'already-summarized', '同会话二次小结跳过')
+ok(summaryGate(sc0, { modelReady: false, alreadyDone: false, userChars: 400, countToday: 0 }).reason === 'no-model', 'LLM 未就绪跳过')
+ok(summaryGate(summaryConfig({ sessionSummary: false }), { modelReady: true, alreadyDone: false, userChars: 400, countToday: 0 }).reason === 'disabled', 'sessionSummary=false 关闭')
+const sdir = mkdtempSync(join(tmpdir(), 'wbmem-s-'))
+try {
+  writeFileSync(
+    join(sdir, '2026-09-01.md'),
+    '# 日志\n\n## 会话小结 10:00\n第一段小结。\n\n## 会话小结 11:00\n第二段小结。\n\n- 12:00【自动】x → y\n',
+    'utf8',
+  )
+  ok(countSummariesToday(join(sdir, '2026-09-01.md')) === 2, '当日小结计数以日志文件为准（重启安全）')
+  ok(countSummariesToday(join(sdir, '2099-01-01.md')) === 0, '日志文件不存在计 0')
+  const input = summaryInputText({ userTexts: ['帮我修插件', '再检查一遍逻辑日'], lastAssistants: ['第一次回复内容。'.repeat(80), '最终结论：已修复'] }, sc0)
+  ok(input.startsWith('--- 用户消息 ---') && input.includes('帮我修插件') && input.includes('最终结论：已修复'), '小结输入含用户消息与助手结论')
+  ok(input.length < 4000, '小结输入受预算约束')
+} finally {
+  rmSync(sdir, { recursive: true, force: true })
+}
+
+console.log('--- index.memory_search 工具（v8 N2 结构 + 临时工作区 e2e）---')
+// 结构校验：register() 只做结构校验（dsh-tools/lib/index.js:2762-2770），普通对象
+// 字面量即可注册——output 必填 { schema, render }、parameters 普通对象 spec、
+// execute 异步。此处静态校验结构，不依赖 cordis 环境。
+const toolDef = idx.memorySearchToolDefinition()
+ok(
+  toolDef.name === 'memory_search' &&
+    toolDef.parameters.type === 'object' &&
+    Array.isArray(toolDef.parameters.required) &&
+    toolDef.parameters.required.includes('q') &&
+    toolDef.parameters.properties?.q?.type === 'string',
+  '工具名与参数 JSON Schema（对象根，q 必填）正确'
+)
+ok(toolDef.output && typeof toolDef.output.render === 'function' && toolDef.output.schema, 'output 必填结构齐备（schema + render）')
+const RAW_TYPES = ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']
+ok(RAW_TYPES.includes(toolDef.output.schema.type), 'output.schema.type 属于 raw JSON Schema 七类型（2026-09-01 踩坑：type:json 是 defineTool DSL，裸注册抛错）')
+ok(typeof toolDef.execute === 'function', 'execute 为函数')
+const rendered = toolDef.output.render({}, { text: 'e2e 预览' })
+ok(Array.isArray(rendered) && rendered[0].type === 'text' && rendered[0].text === 'e2e 预览', 'render 把 canonical JSON 投影为模型文本')
+// e2e：以查询串重新 import 模块实例（ESM 按 URL 缓存，必重新求值），把
+// DSH_WORKSPACE_ROOT 指向临时目录——不碰真实工作区数据。
+const eroot = mkdtempSync(join(tmpdir(), 'wbmem-e-'))
+try {
+  const ews = 'E2E测试区'
+  const emem = join(eroot, ews, '.workbuddy', 'memory')
+  mkdirSync(emem, { recursive: true })
+  writeFileSync(join(emem, 'MEMORY.md'), '<!-- tags: 显示器 / date: 2026-08-20 / importance: high -->\n## 显示器排查\n外接显示器换线解决 NV-Failsafe\n', 'utf8')
+  writeFileSync(join(emem, '2026-08-31.md'), '# 日志\n\n- 21:00【自动】修显示器 → 换线解决 NV-Failsafe\n', 'utf8')
+  process.env.DSH_WORKSPACE_ROOT = eroot
+  const idx2 = await import('../lib/index.js?v8e2e=' + Date.now())
+  const r = await idx2.searchWorkspaceMemory({ q: '显示器', workspace: ews })
+  ok(r.ok === true && r.workspace === ews, '工具 e2e：解析到显式 workspace 参数')
+  ok(r.text.includes('[长期]') && r.text.includes('显示器排查'), '工具 e2e：长期记忆面命中并带来源标记')
+  ok(r.text.includes('[日志 2026-08-31]'), '工具 e2e：日志面命中并带来源标记')
+  const r2 = await idx2.searchWorkspaceMemory({ q: '显示器', workspace: ews, date_from: '2026-09-01', date_to: '2026-09-30' })
+  ok(r2.ok === true && !r2.text.includes('显示器排查'), '工具 e2e：date_from/date_to 滤除范围外长期条目')
+  const r3 = await idx2.searchWorkspaceMemory({ q: '', workspace: ews })
+  ok(r3.ok === false, '工具 e2e：空 q 报参数错误')
+  // 审查 S4：非法日期参数（非零填充）显式提示被忽略，不静默全量检索
+  const r4 = await idx2.searchWorkspaceMemory({ q: '显示器', workspace: ews, date_from: '2026-8-1' })
+  ok(r4.ok === true && r4.ignored.includes('date_from'), '工具 e2e：非法 date_from 进入 ignored 数组')
+  ok(r4.text.includes('未识别的日期参数已忽略'), '工具 e2e：text 含忽略提示行')
+  delete process.env.DSH_WORKSPACE_ROOT
+} finally {
+  delete process.env.DSH_WORKSPACE_ROOT
+  rmSync(eroot, { recursive: true, force: true })
+}
+
+console.log('--- 审查修复回补（2026-09-01：S6 date 归一化 / S1 标题区间）---')
+// S6：手写非零填充 date 归一化为 YYYY-MM-DD；非法值置 null（条目随即可被日期过滤跳过）
+const PAD_MD = [
+  '<!-- tags: x / date: 2026-8-5 -->',
+  '## 手写条目',
+  '正文',
+  '',
+  '<!-- tags: y / date: 不是日期 -->',
+  '## 非法日期条目',
+  '正文',
+  '',
+].join('\n')
+const padEs = readMemoryEntries(PAD_MD)
+ok(padEs[0].date === '2026-08-05', 'S6：非零填充 date 归一化（2026-8-5 → 2026-08-05）')
+ok(padEs[1].date === null, 'S6：非法 date 置 null（不过滤，安全方向）')
+// S1：标题区间按实际装入日期计（预算只够 1 天时标题就写 1 日，不再虚标窗口）
+const s1dir = mkdtempSync(join(tmpdir(), 'wbmem-s1-'))
+try {
+  for (const d of ['2026-08-29', '2026-08-30', '2026-08-31']) {
+    writeFileSync(join(s1dir, d + '.md'), `# ${d} 日志\n\n- 21:00【自动】${d}任务 → 结论结论结论结论结论结论\n`, 'utf8')
+  }
+  const w1 = idx.buildWeekSection(s1dir, { weekWindowDays: 6, weekMaxChars: 1200, weekSummaryDailyChars: 400 }, '2026-09-01')
+  ok(w1.includes('近 3 日回顾'), 'S1 前置：预算充足时 3 天全装入')
+  const w2 = idx.buildWeekSection(s1dir, { weekWindowDays: 6, weekMaxChars: 140, weekSummaryDailyChars: 400 }, '2026-09-01')
+  ok(/^### 近 1 日回顾（2026-08-31 ~ 2026-08-31）/m.test(w2) && w2.length <= 140, 'S1：预算只够 1 天时标题写实际装入的 1 日且总长 ≤ 预算')
+} finally {
+  rmSync(s1dir, { recursive: true, force: true })
+}
+
+console.log('\n--- index.guardedWrite（v9.0 W1 写入护栏）---')
+const gdir = mkdtempSync(join(tmpdir(), 'wbmem-g-'))
+try {
+  const g1 = join(gdir, 'MEMORY.md')
+  writeFileSync(g1, '# 项目长期记忆\n\n## 甲\n正文甲\n', 'utf8')
+  const base1 = readFileSync(g1, 'utf8')
+  const r1 = idx.guardedWrite(g1, base1 + '\n## 乙\n正文乙\n', base1)
+  ok(r1.ok === true && readFileSync(g1, 'utf8').includes('## 乙'), 'G1：读后无人改动 → 正常落盘')
+
+  // 核心场景：读 →（异步 LLM 窗口）→ 写 之间，文件被别的写者改过
+  const base2 = readFileSync(g1, 'utf8')
+  writeFileSync(g1, base2 + '\n## 丙\n并发写者的条目\n', 'utf8')
+  const r2 = idx.guardedWrite(g1, '被 LLM 整理过的全新内容\n', base2)
+  const disk2 = readFileSync(g1, 'utf8')
+  ok(r2.ok === false && r2.conflict === true, 'G2a：窗口内被改动 → 拒绝写入')
+  ok(disk2.includes('## 丙') && !disk2.includes('被 LLM 整理'), 'G2b：并发方刚写入的条目未被静默覆盖')
+  ok(r2.actualLen === disk2.length && r2.expectedLen === base2.length, 'G2c：冲突结果带两侧字符数（供日志定位）')
+  ok(disk2 === base2 + '\n## 丙\n并发写者的条目\n', 'G2d：拒绝时文件逐字节未动')
+
+  const g3 = join(gdir, 'NEW.md')
+  const r3 = idx.guardedWrite(g3, '# 新建\n', '')
+  ok(r3.ok === true && existsSync(g3), 'G3：文件不存在且期望为空 → 允许创建')
+
+  const g4 = join(gdir, 'NEW2.md')
+  const r4 = idx.guardedWrite(g4, 'x', '我以为文件里有内容')
+  ok(r4.ok === false && !existsSync(g4), 'G4：期望有内容但文件不存在 → 拒绝且不落盘')
+
+  const g5 = join(gdir, 'NEW3.md')
+  const r5 = idx.guardedWrite(g5, 'y', null)
+  ok(r5.ok === true && existsSync(g5), 'G5：expected=null 与文件不存在同义（与 safeReadRaw 口径一致）')
+
+  // 内容是唯一判据：同长度不同内容必须拒绝（若用 size/mtime 捷径，此例会漏过）
+  const g6 = join(gdir, 'SAME.md')
+  writeFileSync(g6, 'AAAA', 'utf8')
+  const r6 = idx.guardedWrite(g6, 'BBBB', 'AAAB')
+  ok(r6.ok === false && readFileSync(g6, 'utf8') === 'AAAA', 'G6：同长度不同内容仍拒绝（按内容比对，不用 size/mtime）')
+} finally {
+  rmSync(gdir, { recursive: true, force: true })
+}
+
+console.log('\n--- index.compactMemoryIfOver 冲突护栏 e2e（v9.0 W1）---')
+const ccfg = { memoryCharThreshold: 240, dayBoundaryHour: 4, compactMaxTokens: 800, compactRetryFeedback: false }
+const cdc = { provider: 'p', model: 'm', maxTokens: 100, timeoutMs: 5000 }
+const MEM_SRC = [
+  '# 项目长期记忆', '',
+  '## 甲条目', '甲'.repeat(60), '',
+  '## 乙条目', '乙'.repeat(60), '',
+  '## 丙条目', '丙'.repeat(60), '',
+  '## 丁条目', '丁'.repeat(60), '',
+].join('\n')
+const MEM_NEW = ['# 项目长期记忆', '', '## 甲条目', '压缩甲', '', '## 乙条目', '压缩乙', ''].join('\n')
+
+// 情形 1：LLM 窗口内另一个写者追加了条目 → 必须拒绝写入
+const d1 = mkdtempSync(join(tmpdir(), 'wbmem-c1-'))
+try {
+  const mp1 = join(d1, 'MEMORY.md')
+  writeFileSync(mp1, MEM_SRC, 'utf8')
+  const mk1 = {}
+  const llm1 = {
+    stream: async function* () {
+      writeFileSync(mp1, MEM_SRC + '\n## 并发写入\n会话在窗口内追加的条目\n', 'utf8')
+      yield { type: 'text-delta', text: MEM_NEW }
+      yield { type: 'finish', reason: 'stop' }
+    },
+  }
+  const r1 = await idx.compactMemoryIfOver(llm1, ccfg, cdc, 'ws1', d1, mk1)
+  const disk1 = readFileSync(mp1, 'utf8')
+  ok(r1 && r1.conflict === true && r1.ok === false, 'C1a：compact 撞上并发写入 → 报 conflict 而非静默覆盖')
+  ok(disk1 === MEM_SRC + '\n## 并发写入\n会话在窗口内追加的条目\n', 'C1b：并发方刚写的条目逐字节留存，LLM 结果未落盘')
+  ok(!mk1.ws1 || !mk1.ws1.__compact__, 'C1c：冲突不写 __compact__ 日锁 → 下一轮 sweep 可重试')
+
+  // 情形 2：窗口内无人改动 → 正常落盘（防护栏过度拦截）
+  const d2 = mkdtempSync(join(tmpdir(), 'wbmem-c2-'))
+  try {
+    const mp2 = join(d2, 'MEMORY.md')
+    writeFileSync(mp2, MEM_SRC, 'utf8')
+    const mk2 = {}
+    const llm2 = {
+      stream: async function* () {
+        yield { type: 'text-delta', text: MEM_NEW }
+        yield { type: 'finish', reason: 'stop' }
+      },
+    }
+    const r2 = await idx.compactMemoryIfOver(llm2, ccfg, cdc, 'ws2', d2, mk2)
+    ok(r2 && r2.ok === true, 'C2a：窗口内无人改动 → 正常整理落盘')
+    const disk2b = readFileSync(mp2, 'utf8')
+    ok(disk2b.trimEnd() === MEM_NEW.trimEnd() && disk2b.includes('压缩甲'), 'C2b：磁盘内容=LLM 输出（stripFence + 补尾换行）')
+    ok(mk2.ws2 && mk2.ws2.__compact__ && !!mk2.ws2.__compact__.day, 'C2c：成功仍写日锁（既有防震荡行为未被破坏）')
+  } finally {
+    rmSync(d2, { recursive: true, force: true })
+  }
+} finally {
+  rmSync(d1, { recursive: true, force: true })
+}
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed')
 process.exit(fail ? 1 : 0)

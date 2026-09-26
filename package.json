@@ -1,6 +1,6 @@
 {
   "name": "dsh-wb-memory",
-  "version": "0.9.0",
+  "version": "9.0.0",
   "description": "把 WorkBuddy 的文件化记忆机制带入 DeepSeek Harness：分层注入（全局画像 + 工作区置顶 PINNED + 摘要/相关条目 + 今日日志 + 近 N 日回顾）；记忆源为各 dsh 工作区 .workbuddy/memory/，纯 Markdown 无向量库；含 auto-digest 流水记录、会话收尾小结、auto-distill 日志提炼、memory_search 原生工具（长期记忆+近期日志双源检索）、超阈值 LLM 整理（同轮反馈重试）与 TTL/回收站治理，并在设置面板提供管理界面。",
   "type": "module",
   "main": "lib/index.js",

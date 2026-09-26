@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">dsh-wb-memory —— DeepSeek Harness 的文件化长期记忆插件</title>
+  <desc id="heroDesc">左侧是插件名与一句话说明：给 DSH 的 Agent 一份跨会话长期记忆，纯 Markdown、无向量库、无外部依赖。右侧是每回合同步构建进 systemPrompt 的分层预算：L0 全局画像 2000 字符，N3 置顶 1000，L1/L2 摘要与相关条目 1500，L3 今日日志 1500，N1 近 6 日回顾 1200。</desc>
+  <rect width="1200" height="360" rx="26" fill="#0B0E12"/>
+  <g id="title-block" transform="translate(56 32)">
+    <text x="0" y="0" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" letter-spacing="1.5" fill="#6EA8FE">DSH PLUGIN · 文件化长期记忆</text>
+    <text x="0" y="64" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="54" font-weight="700" fill="#E7EBF0">dsh-wb-memory</text>
+    <text x="0" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="23" fill="#A8B2BE">给 DSH 里的 Agent 一份跨会话长期记忆。</text>
+    <text x="0" y="144" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="23" fill="#A8B2BE">纯 Markdown 文件，无向量库、无外部依赖。</text>
+    <text x="0" y="200" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8A94A0">v9.0 · MIT · 0 运行时依赖 · 108 项冒烟测试</text>
+  </g>
+  <g id="injection-stack" transform="translate(700 36)">
+    <rect width="444" height="288" rx="16" fill="#12171D" stroke="#232B34"/>
+    <text x="22" y="30" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8A94A0">systemPrompt · 每回合同步构建</text>
+    <line x1="22" y1="46" x2="422" y2="46" stroke="#232B34"/>
+    <rect x="20" y="75" width="4" height="18" rx="2" fill="#6EA8FE"/>
+    <text x="34" y="93" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#8A94A0">L0</text>
+    <text x="88" y="93" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="20" fill="#E7EBF0">全局画像 USER.md</text>
+    <text x="422" y="93" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#6EA8FE">2000</text>
+    <rect x="20" y="119" width="4" height="18" rx="2" fill="#F0B429"/>
+    <text x="34" y="137" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#8A94A0">N3</text>
+    <text x="88" y="137" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="20" fill="#E7EBF0">置顶 PINNED.md</text>
+    <text x="422" y="137" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#6EA8FE">1000</text>
+    <rect x="20" y="163" width="4" height="18" rx="2" fill="#3A444F"/>
+    <text x="34" y="181" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#8A94A0">L1/2</text>
+    <text x="88" y="181" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="20" fill="#E7EBF0">摘要 · 相关条目 top-5</text>
+    <text x="422" y="181" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#6EA8FE">1500</text>
+    <rect x="20" y="207" width="4" height="18" rx="2" fill="#3A444F"/>
+    <text x="34" y="225" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#8A94A0">L3</text>
+    <text x="88" y="225" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="20" fill="#E7EBF0">今日日志（逻辑日）</text>
+    <text x="422" y="225" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#6EA8FE">1500</text>
+    <rect x="20" y="251" width="4" height="18" rx="2" fill="#3A444F"/>
+    <text x="34" y="269" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#8A94A0">N1</text>
+    <text x="88" y="269" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="20" fill="#E7EBF0">近 6 日回顾</text>
+    <text x="422" y="269" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="19" fill="#6EA8FE">1200</text>
+  </g>
+</svg>

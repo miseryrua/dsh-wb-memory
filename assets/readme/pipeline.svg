@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="pipeTitle pipeDesc">
+  <title id="pipeTitle">dsh-wb-memory 的自动化流水线与治理</title>
+  <desc id="pipeDesc">三步流水线加一层治理。每轮对话后 auto-digest 用零 LLM 把要求与结论追加进当日日志；每小时 auto-distill 用 LLM 把历史日志按工作区和日期幂等地提炼成 MEMORY.md 条目，坑条目要求四段式；MEMORY.md 超字符阈值时 auto-compact 先备份到 archive 再压缩回阈值内，必须变短且条目数不少于一半。治理按 TTL 归档过期日志、清理回收站与归档超期副本，近重复检测只报告不合并。写入护栏在 compact 与 USER.md 候选写盘前重读比对，不一致就放弃本次、下一轮重试。</desc>
+  <rect width="1200" height="420" rx="26" fill="#0B0E12"/>
+  <text x="56" y="44" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" letter-spacing="1.5" fill="#6EA8FE">自动化流水线 · 后台自己跑</text>
+  <g id="step-1" transform="translate(56 84)">
+    <rect width="330" height="156" rx="16" fill="#12171D" stroke="#232B34"/>
+    <text x="18" y="26" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8A94A0">① 每轮对话后</text>
+    <text x="18" y="52" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="20" fill="#6EA8FE">auto-digest</text>
+    <text x="18" y="84" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="22" font-weight="700" fill="#E7EBF0">会话回合 → 当日日志</text>
+    <text x="18" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">每轮完成的对话追加一条：</text>
+    <text x="18" y="136" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">HH:MM【自动】要求 → 结论</text>
+  </g>
+  <line x1="394" y1="162" x2="410" y2="162" stroke="#3A444F" stroke-width="2"/>
+  <path d="M410 155 L418 162 L410 169 Z" fill="#3A444F"/>
+  <g id="step-2" transform="translate(426 84)">
+    <rect width="330" height="156" rx="16" fill="#12171D" stroke="#232B34"/>
+    <text x="18" y="26" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8A94A0">② 每小时巡检</text>
+    <text x="18" y="52" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="20" fill="#6EA8FE">auto-distill</text>
+    <text x="18" y="84" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="22" font-weight="700" fill="#E7EBF0">历史日志 → MEMORY.md</text>
+    <text x="18" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">按（工作区, 日期）幂等重试</text>
+    <text x="18" y="136" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">坑条目要求四段式</text>
+  </g>
+  <line x1="764" y1="162" x2="780" y2="162" stroke="#3A444F" stroke-width="2"/>
+  <path d="M780 155 L788 162 L780 169 Z" fill="#3A444F"/>
+  <g id="step-3" transform="translate(796 84)">
+    <rect width="330" height="156" rx="16" fill="#12171D" stroke="#232B34"/>
+    <text x="18" y="26" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8A94A0">③ 超阈值时</text>
+    <text x="18" y="52" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="20" fill="#6EA8FE">auto-compact</text>
+    <text x="18" y="84" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="22" font-weight="700" fill="#E7EBF0">超阈值 → 压缩</text>
+    <text x="18" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">先备份到 archive/ 再压回阈值</text>
+    <text x="18" y="136" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">必须变短、条目数不少于一半</text>
+  </g>
+  <g id="governance" transform="translate(56 270)">
+    <rect width="1088" height="84" rx="16" fill="#12171D" stroke="#232B34"/>
+    <text x="22" y="36" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" fill="#6EA8FE">治理 gc</text>
+    <text x="130" y="36" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="19" fill="#8A94A0">TTL 归档过期日志 · 清理回收站与归档超期副本 · 近重复检测只报告不合并</text>
+    <text x="22" y="68" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">写入护栏（v9.0）：compact 与 USER.md 候选在写盘前重读比对，不一致即放弃本次、下一轮重试</text>
+  </g>
+</svg>

@@ -5,6 +5,7 @@
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import vm from 'node:vm'
 
 import {
   readMemoryEntries,
@@ -443,6 +444,92 @@ try {
   }
 } finally {
   rmSync(d1, { recursive: true, force: true })
+}
+
+console.log('\n--- index.compactMemoryIfOver 第二轮结构硬卡 e2e（2026-09-29 加固）---')
+const ccfg2 = { memoryCharThreshold: 240, dayBoundaryHour: 4, compactMaxTokens: 800 }
+// 情形 3：第二轮输出散文化（0 个「## 」条目）→ 必须拒收、保留原文件
+const d3 = mkdtempSync(join(tmpdir(), 'wbmem-c3-'))
+try {
+  const mp3 = join(d3, 'MEMORY.md')
+  writeFileSync(mp3, MEM_SRC, 'utf8')
+  const mk3 = {}
+  let call3 = 0
+  const llm3 = {
+    stream: async function* () {
+      call3++
+      if (call3 === 1) yield { type: 'text-delta', text: MEM_SRC }
+      else yield { type: 'text-delta', text: '这份记忆可以并入环境备忘，要我直接写入的话确认一下路径。' }
+      yield { type: 'finish', reason: 'stop' }
+    },
+  }
+  const r3 = await idx.compactMemoryIfOver(llm3, ccfg2, cdc, 'ws3', d3, mk3)
+  ok(call3 === 2, 'C3a：首轮不合规触发同轮重试（实际调用 ' + call3 + ' 次）')
+  ok(r3 && r3.ok === false, 'C3b：第二轮散文化（0 条目）→ 拒收')
+  ok(readFileSync(mp3, 'utf8') === MEM_SRC, 'C3c：原文件逐字节保留（旧实现会整份覆盖）')
+  ok(r3 && r3.checks && r3.checks.keptHalfEntries === false, 'C3d：失败原因记为 keptHalfEntries=false')
+  ok(mk3.ws3 && mk3.ws3.__compact__ && !!mk3.ws3.__compact__.day, 'C3e：拒收仍写日锁（防震荡行为不变）')
+} finally {
+  rmSync(d3, { recursive: true, force: true })
+}
+
+// 情形 4：第二轮条目数达标但超阈值 → 仍带警告接受（自愈路径不许被堵死）
+const d4 = mkdtempSync(join(tmpdir(), 'wbmem-c4-'))
+try {
+  const mp4 = join(d4, 'MEMORY.md')
+  writeFileSync(mp4, MEM_SRC, 'utf8')
+  const mk4 = {}
+  let call4 = 0
+  const MEM_NEW4 = ['# 项目长期记忆', '', '## 甲条目', '甲'.repeat(120), '', '## 乙条目', '乙'.repeat(120), ''].join('\n')
+  ok(MEM_NEW4.length < MEM_SRC.length && MEM_NEW4.length > ccfg2.memoryCharThreshold, 'C4pre：测试构造满足「更短但超阈值」（' + MEM_NEW4.length + ' vs 原文 ' + MEM_SRC.length + '，阈值 ' + ccfg2.memoryCharThreshold + '）')
+  const llm4 = {
+    stream: async function* () {
+      call4++
+      if (call4 === 1) yield { type: 'text-delta', text: MEM_SRC }
+      else yield { type: 'text-delta', text: MEM_NEW4 }
+      yield { type: 'finish', reason: 'stop' }
+    },
+  }
+  const r4 = await idx.compactMemoryIfOver(llm4, ccfg2, cdc, 'ws4', d4, mk4)
+  ok(r4 && r4.ok === true && r4.rounds === 2, 'C4a：第二轮条目数达标 + 超阈值 → 带警告接受（underThreshold 仍是建议）')
+  ok(!!(r4 && r4.warnings && r4.warnings.includes('仍超阈值')), 'C4b：warnings 记录「仍超阈值」（实际 ' + (r4 && r4.warnings) + '）')
+  ok(readFileSync(mp4, 'utf8').trimEnd() === MEM_NEW4.trimEnd(), 'C4c：该路径仍正常落盘')
+} finally {
+  rmSync(d4, { recursive: true, force: true })
+}
+
+console.log('\n--- index.userMdChecks（USER.md 写入前校验，2026-09-29 加结构硬卡）---')
+const curMd = '# 用户长期记忆\n\n## 偏好\n- 甲\n\n## 环境备忘（2026-08-28 实测更新）\n- 乙\n'
+const nextMd = curMd + '- 丙\n'
+const goodC = idx.userMdChecks(nextMd, curMd)
+ok(Object.values(goodC).every(Boolean), 'U1：正常画像合并（有标题有小节、未缩水）→ 全项通过')
+const orphan = '这条信息值得并入环境备忘——和已有的「WorkBuddy shim 失效」同属 Windows 沙箱/权限类坑。\n\n要我直接写入文件的话，确认一下路径（默认 ~/.dsh/USER.md？）。\n'
+const orphanC = idx.userMdChecks(orphan, curMd)
+ok(orphanC.nonEmpty === true && orphanC.withinCap === true && orphanC.noMassDeletion === true, 'U2a：2026-09-25 事故原文仍满足旧三条校验（长度类拦不住它）')
+ok(orphanC.hasHeading === false && orphanC.hasSection === false, 'U2b：结构校验拦下散文化回答')
+ok(!Object.values(orphanC).every(Boolean), 'U2c：综合判定为不过 → 不写、保留旧画像')
+ok(idx.userMdChecks('## 小节\n内容', '').hasHeading === false, 'U3：首行是 ## 不算 H1 标题')
+ok(idx.userMdChecks('## 小节\n内容', '').hasSection === true, 'U4：## 小节被识别为结构')
+ok(idx.userMdChecks('#用户长期记忆\n## 偏好\n- 甲', '').hasHeading === true, 'U5：# 后无空格也算标题行')
+ok(idx.userMdChecks('', curMd).nonEmpty === false, 'U6：空输出 → 不过')
+ok(idx.userMdChecks('#\n## 偏好\n- 甲', '').hasHeading === false, 'U7：只有 # 号无标题文字 → 不过')
+
+console.log('--- index.sameOrigin（写操作同源门；2026-09-29 修空体 403）---')
+ok(idx.sameOrigin({ headers: { origin: 'http://127.0.0.1:19387', host: '127.0.0.1:19387' } }) === true, '同主机同端口 → 放行')
+ok(idx.sameOrigin({ headers: { origin: 'http://localhost:19387', host: '127.0.0.1:19387' } }) === true, 'localhost 与 127.0.0.1 视为同一主机（原实现在此误拒）')
+ok(idx.sameOrigin({ headers: { host: '127.0.0.1:19387' } }) === true, '无 Origin（curl/脚本客户端）→ 放行')
+ok(idx.sameOrigin({ headers: { origin: 'https://evil.example', host: '127.0.0.1:19387' } }) === false, '真跨站写 → 拒绝')
+ok(idx.sameOrigin({ headers: { origin: 'null', host: '127.0.0.1:19387', 'sec-fetch-site': 'cross-site' } }) === false, '不透明来源 + 跨站 → 拒绝')
+ok(idx.sameOrigin({ headers: { origin: 'http://127.0.0.1:9999', host: '127.0.0.1:19387' } }) === false, '端口不同 → 拒绝')
+ok(idx.normHostValue('example.com:80') === 'example.com' && idx.normHostValue('example.com:443') === 'example.com', '默认端口 80/443 归一为省略端口')
+ok(idx.sameOrigin({ headers: { origin: 'http://example.com:80', host: 'example.com' } }) === true, 'Origin 带默认端口 :80 与省略端口的 Host 等价')
+
+console.log('--- lib/client.js 语法可解析（面板 bundle）---')
+try {
+  new vm.Script(readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8'), { filename: 'lib/client.js' })
+  ok(true, 'client.js 可被 JS 引擎解析（防面板 bundle 语法错误）')
+} catch (e) {
+  ok(false, 'client.js 语法错误：' + e.message)
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed')

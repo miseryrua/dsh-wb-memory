@@ -1,4 +1,4 @@
-﻿# 个人记忆数据，不进仓库
+# 个人记忆数据，不进仓库
 USER.md
 USER-CANDIDATES.md
 distilled.json
@@ -6,3 +6,15 @@ USER.md.bak
 USER-CANDIDATES.log
 config.json.bak
 distilled.json.bak
+
+# 机器配置与有界运行状态（不公开）
+config.json
+distill-diagnostics.json
+distill-schedule.json
+**/summary-pending.json
+**/heat.json
+.tmp/
+*.log
+*.bak*
+node_modules/
+*.tgz

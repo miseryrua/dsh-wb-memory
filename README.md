@@ -1,18 +1,28 @@
 # dsh-wb-memory
 
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="dsh-wb-memory：给 DSH 的 Agent 一份跨会话长期记忆，纯 Markdown 无向量库；右侧列出每回合注入 systemPrompt 的五层预算">
+  <img src="./assets/readme/hero.svg" width="100%" alt="dsh-wb-memory：基于 Markdown 的跨会话记忆与分层上下文注入">
 </p>
 
-**给 DSH 里的 Agent 一份跨会话长期记忆。** 记忆就是工作区里的 Markdown 文件——没有向量库、没有外部服务、没有运行时依赖；每回合按 token 预算分层注入到 `systemPrompt`。
+**给 DeepSeek Harness 的 Agent 一份跨会话长期记忆。** 真值源是各工作区的 Markdown 文件，无向量库、无第三方运行时依赖。每轮按预算注入画像、置顶、相关记忆和日志；后台小结、提炼与整理使用你指定的 LLM。
 
-- **看得见、能 grep、能进 git**：真值源是 `<工作区>/.workbuddy/memory/` 下的普通 Markdown，Agent 自己也能直接读写
-- **零运行时依赖**：只用 Node 内置模块，不引第三方包
-- **后台自己维护**：流水、提炼、整理、治理四个流程自动跑，不需要你手工整理记忆
+**当前版本：0.10.5** · Node.js 22+ · MIT · Windows + Node 24 已实测
+
+[安装](#快速开始) · [记忆流水线](#自动化流水线) · [配置](#配置项) · [诊断](#状态与诊断) · [版本记录](#版本记录) · [测试](#开发与验收)
+
+## 主要能力
+
+- **可读、可备份**：每个工作区独立保存长期记忆、置顶和每日日志；全局画像由候选机制维护。
+- **按当前任务召回**：长期条目使用连续中文 bigram、中英停用词和 IDF 字段评分，首轮用户任务也能参与检索；摘要与相关条目二选一。
+- **小结防丢**：完成轮次闲置后生成小结；本地快照支持重启恢复、失败重试及输入版本去重，继续聊天可以生成新版本。
+- **分块增量提炼**：当天及历史日志共用消费游标、前缀指纹与批次回执；追加续跑，失败不推进，残缺输出不入库。
+- **公平调度**：跨工作区、日期轮转；失败持久退避，不让前排反复失败耗尽全部额度。
+- **安全整理**：保留结构化写入护栏、备份与并发检查；仅整理允许合并完整尾部新条目，不自动置顶或按热度归档。
+- **设置面板与原生工具**：管理记忆、配置模型、治理文件，并用 `memory_search` 同时检索长期条目与近期日志。
 
 ## 快速开始
 
-在你的 profile 里做两件事：装依赖、把插件名加进 bundle 列表。
+在 DSH profile 中安装并加入 bundle，例如本地开发链接：
 
 ```json
 {
@@ -27,170 +37,167 @@
 }
 ```
 
-然后重启 DSH 宿主。插件通过自己的 `cordis.patch.yml`（由 `package.json` 的 `dsh.bundle.patch` 字段声明）插进 profile 的层栈，不用手改 profile 的其它配置。
+插件通过 [cordis.patch.yml](./cordis.patch.yml) 加入 profile 层栈。**安装或更新后台源码后，完全退出并重启 DSH 宿主，刷新浏览器不够。** 在设置面板找到 wb-memory，并检查总开关。
 
-启用后确认两件事：
+1. 指定工作区根：环境变量 `DSH_WORKSPACE_ROOT` 优先于 `workspaceRoot`。未指定时仅兼容已存在的旧 Windows 根 `D:/datas/Deepseek Harness`，不猜测用户目录；其他平台应显式配置绝对路径。
+2. 会话 cwd 位于该根的某工作区内时自动匹配，否则用面板选择的 `activeProject` 兜底。
+3. 在面板选择提炼模型；整理模型可独立选择，未指定时沿用提炼路由。路由不可用不会静默切到主 Agent 模型。
+4. 用只读 `GET /wb-memory/status` 核对 `runtimeRevision=2026-10-15-v0.10.5`。
 
-1. 设置面板出现 wb-memory 页签，总闸 `enabled` 为开；
-2. 面板里选好「当前激活工作区」——会话 cwd 落在 `<记忆根>/<工作区>/` 下会自动匹配，不落在时用面板这个值兜底。
+[config.example.json](./config.example.json) 提供无机器路径、无个人模型选择的示例。可在**尚无本机配置时**复制成插件目录的配置文件，再填写根目录及路由；不要覆盖已在用的配置。示例关闭了 `autoDistill` 和 `sessionSummary`，选好模型后自行开启，避免无意触发后台费用。程序缺字段仍使用内置默认值，不等同示例开关。
 
-记忆目录不需要预先创建，第一次写入时会自己建。已在 DSH 0.1.7-rc.2 + Node 24（Windows）上日常使用。
+本机配置、个人画像、消费游标与运行状态均不提交 Git。本版停止跟踪旧版的本机配置；**从仍跟踪配置的旧提交升级前，先备份插件目录配置，升级后恢复**，避免 Git 删除旧的受跟踪文件。本次本地发布已保留现用配置，仅从 Git 索引移除。
 
-## 它会往上下文里塞什么
+## 上下文注入
 
-注入块同步拼装，结构固定、顺序固定：
+同步拼装、只读，不在注入路径调用 LLM 或写状态：
 
-```
-# WorkBuddy 记忆（由 dsh-wb-memory 插件注入，启用时生效）
-## 全局用户记忆（USER.md）                       ← L0 全局画像
-## 当前工作区：程序开发（已自动匹配）
-### 置顶记忆（PINNED.md，用户明确钉住，长期有效）  ← N3 优先级最高
-### 长期记忆 / 相关条目（按当前任务召回 top-5）   ← L2 召回；注入时机拿不到
-### 长期记忆 / 摘要（完整内容请按需读取 MEMORY.md）     用户消息时退化为 L1
-### 今日日志（2026-09-26.md）                   ← L3 保尾截断
-## 近 6 日回顾（2026-09-20 ~ 2026-09-25）        ← N1 零 LLM
-## 可用工作区
-## 记忆纪律                                      ← 读/何时写/不写/写到哪/冲突消解
-```
+| 层 | 内容 | 默认字符预算 |
+| --- | --- | --- |
+| 全局画像 | 插件目录画像 | 2000 |
+| 用户置顶 | 工作区置顶，必须由用户明确要求 | 1000 |
+| 长期摘要 | 条目标题与首行，无相关召回时使用 | 1500 |
+| 长期相关条目 | 当前任务 top-K，与摘要互斥 | 每条基础800，动态最多2000 |
+| 今日日志 | 保留尾部最新记录 | 1500 |
+| 近日日志回顾 | 零 LLM，默认近6日 | 1200 |
 
-长期记忆的正文**不**全量注入：只给条目标题和首行，细节留给 Agent 用文件工具按需打开，或用 `memory_search` 工具按关键词召回。
+总预算 `injectionMaxChars` 默认12000、下限4000，包含包装与纪律。动态余量按相关评分分配，短条目的空余额可复用；画像与置顶优先。**这是字符上限，不是精确 token 限制**，小预算可能裁掉相关正文。长期摘要不含全文，相关条目也有截断；完整内容可用文件工具或 `memory_search` 按需读取。
 
-| 层 | 内容 | 预算（config.json） | 截断方式 |
-| --- | --- | --- | --- |
-| L0 | 插件目录 `USER.md` 全局画像 | `profileMaxChars` = 2000 | 保头 |
-| N3 | 工作区 `PINNED.md` 置顶 | `pinnedMaxChars` = 1000 | 保头并标注 |
-| L1 | `MEMORY.md` 条目标题 + 首行 | `summaryMaxChars` = 1500 | 按条目预算 |
-| L2 | `MEMORY.md` 相关条目 top-K | `relevantTopK` × `entryMaxChars` | 每条 800 |
-| L3 | 当日日志 | `logMaxChars` = 1500 | 保尾（最新记录在文件尾部） |
-| N1 | 近 `weekWindowDays` 日回顾 | `weekMaxChars` = 1200 | 每日子预算 400 |
+热度仅记录曝光次数和最近曝光时间，同会话轮次去重、异步刷盘；不参与检索评分、不自动归档或置顶。同名标题合并计数，重命名视新条目，未刷盘的最后几秒计数可能丢失。
 
-## 记忆存在哪
+## 记忆存储
 
-真值源是**各工作区自己的目录**，根目录可用环境变量 `DSH_WORKSPACE_ROOT` 覆盖（默认 `D:/datas/Deepseek Harness`）：
-
-```
+```text
 <工作区>/.workbuddy/memory/
-├── MEMORY.md          # 长期记忆：## 标题 分段，可带 frontmatter 注释行
-├── YYYY-MM-DD.md      # 每日日志：人工收尾记录 + 自动流水
-├── PINNED.md          # 置顶记忆（不参与整理与治理）
-├── archive/           # 过期日志归档 + MEMORY.md 容量备份
-└── .trash/<ts>/       # 删除的回收站
+├── MEMORY.md              # 长期条目：元数据注释 + ## 标题 + 正文
+├── YYYY-MM-DD.md          # 每日日志：自动流水、会话小结及人工记录
+├── PINNED.md              # 用户明确置顶，不参与整理和治理
+├── summary-pending.json   # 含会话片段的恢复快照；应按私密数据保护
+├── heat.json              # 曝光统计
+├── archive/               # 过期日志及长期记忆备份
+└── .trash/<时间戳>/        # 可恢复的回收文件
 
-插件目录 ~/.dsh/plugins-dev/dsh-wb-memory/
-├── USER.md            # 全局用户画像（跨工作区只读；旧版留 USER.md.bak）
-├── USER-CANDIDATES.md # 画像候选（Agent 按行追加，巡检自动评估并入）
-├── config.json        # 配置（面板可改，热生效）
-└── distilled.json     # 幂等标记（工作区 + 日期 → 已提炼）
+<插件目录>/
+├── USER.md                # 全局画像，Agent只读
+├── USER-CANDIDATES.md     # 画像候选，由巡检评估合并
+├── config.json            # 本机配置
+├── distilled.json         # 消费游标、指纹、回执及整理标记
+├── distill-schedule.json  # 跨工作区/日期轮转及失败冷却
+└── distill-diagnostics.json # 有界诊断，不是永久审计档案
 ```
 
-删文件走 `rename` 进 `.trash/`，所以误删可回滚；真删只发生在 `.trash/` 与 `archive/` 里已过保留期的副本上。
+文件属于本地敏感数据，尤其小结快照可能含聊天片段。诊断不保存输入/输出正文或任意错误原文，但会包含工作区名、路由名、长度、散列批次和时间。备份时请同时考虑数据隐私；本仓库只携带合成测试资料。
 
 ## 自动化流水线
 
-<p align="center">
-  <img src="./assets/readme/pipeline.svg" width="100%" alt="三步流水线加一层治理：auto-digest 每轮零 LLM 把要求与结论追加进当日日志；auto-distill 每小时用 LLM 把历史日志提炼成 MEMORY.md 条目；auto-compact 在超过字符阈值时先备份再压缩回阈值内；治理按 TTL 归档过期日志并清理回收站与归档超期副本">
-</p>
+### 1. 流水与会话小结
 
-- **auto-digest（零 LLM）**：订阅 `session/event`，每轮成功结束追加一条 `HH:MM【自动】用户要求 → 结论` 进当日日志。助手侧**头尾各取**——结论常在尾部，只取头部会把它丢掉。带去重与每日上限 `digestMaxPerDay`。
-- **auto-distill（每小时，LLM）**：把**昨天及更早**的日志提炼成带 frontmatter 的条目追加进 `MEMORY.md`，按（工作区，日期）幂等，失败自动重试，顺带扫 `archive/`。提炼 prompt 强制三分类 + 「坑」条目四段式（现象 → 根因 → 绕过办法 → 影响边界）+ 可信边界标注。
-- **auto-compact（LLM）**：`MEMORY.md` 超 `memoryCharThreshold` 时整理。四道护栏：必须变短、压回阈值内、条目数不少于一半、每天每工作区至多一次；落盘前先备份到 `archive/`。目标字符数按上次实测超幅自适应（`threshold/超幅×0.95`，限幅 [0.3, 0.8]×threshold）——固定系数和护栏之间没余量就会拒收死循环。
-- **会话小结（LLM）**：会话空闲 `summaryIdleMs` 后生成小结写进当日日志。四道闸：用户文本 ≥ `summaryMinUserChars`、当天 ≤ `summaryMaxPerDay` 次、同会话只小结一次、LLM 路由就绪。
-- **画像候选**：Agent 不直接改 `USER.md`。跨项目通用的新发现按行追加到 `USER-CANDIDATES.md`，巡检调 LLM 评估并入（先备份，护栏：非空、≤ 6000 字符、不得缩水到旧版 30% 以下），成功后清空候选并留痕 `USER-CANDIDATES.log`。
+- **auto-digest（零 LLM）**：完成一轮后把“用户要求 → 结论”追加到逻辑日日志，带去重及每日上限；助手摘要保留头尾。
+- **会话小结（LLM）**：完成轮次后默认闲置10分钟、累计用户文本至少300字符才生成，每逻辑日默认最多8次。输入用户总预算2000字符、助手最近两条各500字符；超长输入仍会裁剪，不保证无限聊天完整保留。
+- live 定时器、60秒恢复扫描及失败重试共用完成态和闲置门禁；保存完成时间，新轮重置计时，重复落盘不刷新。旧快照缺时间字段时保守等待。原逻辑日和输入版本参与幂等判断，失败可恢复，同一版本已完成不再写入。
+- 正常关闭浏览器不等于宿主退出；关机期间不会生成小结或提炼。快照防普通重启丢失，不是断电绝对持久保证。
 
-## 写入路径与护栏
+### 2. 日志提炼（LLM）
 
-`MEMORY.md` 有三个写者，没有任何握手：
+默认每小时巡检，启动后约60秒首次尝试。当天仅处理完整行的稳定前缀，默认新增至少300字符且文件闲置2分钟；历史日志含归档目录也会处理。**2分钟是准入条件，不是2分钟必定入库。**
 
-| 写者 | 时机 | 写法 |
-| --- | --- | --- |
-| 会话流水 | 每轮对话后 | `appendFileSync` 追加当日日志 |
-| auto-distill | 每小时 | 读日志 → LLM → 追加条目进 MEMORY.md |
-| auto-compact | 超阈值 | 读 MEMORY.md → LLM 整体重写 |
+每块默认最多12000输入字符、2000输出 token，每轮默认最多8块；跨工作区和日期轮转。失败让出位置，不推进消费游标，同轮不反复调用该失败日期；持久退避为2/4/8/16/24小时封顶。公平调度降低饥饿风险，不保证固定入库时限。
 
-distill 的读-改-写落在同一个 tick 里（中间没有 `await`），本来就没有窗口。**compact 和 `USER.md` 画像候选却有真窗口**：从读原文到写盘之间夹着完整的 LLM 调用，最坏 `distillTimeoutMs` × 2 轮 ≈ 6 分钟。这期间 Agent 若按纪律往 `MEMORY.md` 追加了条目，整体重写会把它静默抹掉。
+消费标记含 UTF-16 offset、前缀 SHA256、批次回执；已处理前缀被改写或旧标记没有长度时保守重扫并查重，可能增加模型费用。当天完成后有新追加仍可续跑。提交后崩溃可用回执恢复，零新增不强制创建长期文件。
 
-v9.0 因此加了 `guardedWrite(p, content, expectedRaw)`：**写盘前重读文件，与「送进 LLM 的那份原文」按内容逐字节比对**，不一致就放弃本次写入。
+### 3. 整理与画像（LLM）
 
-```
-[wb-memory][compact] 程序开发: 写入前发现 MEMORY.md 已被改动（285 -> 306 字符），本次放弃，下一轮重做
-```
+- 长期记忆超阈值后整理，写前备份。非空、变短和至少保留一半条目是结构护栏；压回目标阈值未达标可带警告接受，避免永远无法自愈。每工作区每日尝试限制及反馈重试由现有标记控制。
+- Agent 不直接改全局画像：先追加候选，巡检评估合并。画像必须有一级标题和二级分区，并满足长度及不低于旧文30%等校验；失败保留候选。
+- 生成协议同时放在 system 与数据之外的 user 消息中，兼容网关替换 system；历史数据使用转义 JSON 封装。输入更长会增加 token，不构成提示注入免疫保证。
 
-几个刻意的选择：
+### 4. 治理
 
-- **不比 size/mtime，也不写文件内版本号**：比的是内容本身（同长度不同内容也拦得住），且期望值必须取自「读原文那一刻」并由调用方传进来——护栏自己在写前才 `stat`/重读的话，比较会恒等成立（TOCTOU），等于没护栏。
-- **冲突不报错、不覆盖**：compact 冲突时提前返回，不写「今天已尝试」的日锁，下一轮巡检自动重试；`USER.md` 冲突时候选条目保留，同样等下轮。
-- **不改 HTTP 写入路径**：`POST /wb-memory/file` 是面板里人工确认过的覆盖（先弹「文件 X 已存在，覆盖写入？」），属于显式动作，加护栏反而破坏既有流程。
+按 TTL 归档过期日志，报告近重复但不自动合并，清理回收站与归档中的超期副本。置顶不参与。两个清理保留天数设为≤0可禁用对应清理；`gcEnabled=false` 跳过治理。
 
-## 治理
+删除先 rename 到回收站；治理对超期副本会**真正删除**，不能把治理接口当状态轮询。原查重 tokenizer 和默认阈值0.45不随新检索评分变化。
 
-面板「治理」按钮或 `POST /wb-memory/gc` 触发；`gcEnabled=false` 时整段跳过。
+## 写入护栏与限制
 
-TTL 归档过期日志（`logRetentionDays`）、容量检测（`memoryCharThreshold`）、近重复检测（`dupThreshold`，Jaccard + 重叠率双指标，**只报告不合并**）、回收站清理（`trashRetentionDays`）、归档清理（`archiveRetentionDays`）。两个保留天数设为 ≤ 0 即禁用对应清理。
+- 只接受完成态为正常结束的模型结果；截断、超时、缺 finish、空正文及非法结构拒收，不推进游标。
+- 提炼每个非空条目都必须有闭合元数据注释、二级标题与正文；LF/CRLF、缩进及条目间空行合法，残缺中间或尾条整批拒收，不靠丢条伪装成功。
+- `guardedWrite(p, content, expectedRaw)` 默认发现原文改变就拒写；只有整理显式允许合并“原快照未变 + 尾部完整新条目”。编辑旧正文或半条目仍拒绝，画像不启用追加合并。
+- 正文及状态用临时文件加 rename 替换；这是**单宿主写者约束**，不是跨进程原子 CAS，也没有 fsync 断电保证。
+- 面板人工确认覆盖属于显式写操作，与后台异步整理的冲突护栏不是一回事。
+- 长期条目使用新 IDF 检索；日志搜索仍是原关键词匹配。共享词可能误召回，纯版本号等也可能漏日志，不能等同语义搜索。
 
-## 工具与 HTTP 路由
+## 状态与诊断
 
-`memory_search` 原生工具（开关 `memorySearchTool`，改动需重载插件）：参数 `q` 关键词，可选 `workspace` / `date_from` / `date_to`，同时检索长期记忆条目与近 `searchLogDays` 天的日志，比让模型读全文省 token。
+只读状态：`GET /wb-memory/status?workspace=<工作区>`。
 
-webServer 路由（exact）：
+- 顶层 `runtimeRevision` 用于确认宿主加载版本。
+- `distill.pendingDates/lastAt` 只属于当前解析工作区，**不是全库积压数或全局最近巡检时间**。
+- `diagnostics.scope=global` 是全库有界诊断，最多64个事件另留最近巡检起止摘要，覆盖逐块/模型完成与拒收类别。开始但无结束可能在运行或宿主退出，不足以直接断言失败。
+- `model.finish=truncated` 才是截断证据；HTTP 200或恰好用完 token 本身不是。
+- `block.status=committed` 表示块游标已提交；工作区待处理且剩余额度为0表示本轮未轮到，不应叫模型失败。
+- `lastSweepEnd.attempted/failed/committed` 仅统计提炼块，partial也可能来自整理或画像失败。
 
 | 路由 | 方法 | 用途 |
 | --- | --- | --- |
-| `/wb-memory/config` | GET/POST | 读/改配置（POST 需同源，字段白名单） |
-| `/wb-memory/status` | GET | 运行状态：占用、条目数、今日流水、待提炼、上次整理、回收站与归档计数（只读） |
+| `/wb-memory/config` | GET/POST | 配置读写，POST字段白名单及同源检查 |
+| `/wb-memory/status` | GET | 只读工作区状态与全库诊断 |
 | `/wb-memory/workspaces` | GET | 工作区列表 |
-| `/wb-memory/files` | GET | 激活工作区的记忆文件列表（含 size） |
-| `/wb-memory/file` | GET/POST/DELETE | 读/写/回收单个文件（basename 防穿越） |
-| `/wb-memory/search` | GET | 关键词召回（`?q=&workspace=`） |
-| `/wb-memory/gc` | POST | 手动治理（会执行归档与真删，别拿它轮询） |
-| `/wb-memory/distill` | GET | 触发全工作区巡检（`?wait=1` 同步等结果） |
-| `/wb-memory/models` | GET | 可用 LLM 路由（面板模型下拉用） |
-| `/wb-memory/debug-cwd` | GET | 调试：最近会话 cwd 与工作区解析 |
+| `/wb-memory/files` | GET | 记忆文件列表 |
+| `/wb-memory/file` | GET/POST/DELETE | 读、人工覆盖或移入回收站 |
+| `/wb-memory/search` | GET | 关键词检索，可指定工作区与日期 |
+| `/wb-memory/gc` | POST | 手动治理，有真实清理副作用 |
+| `/wb-memory/distill` | GET | **触发全工作区巡检**，含整理及画像候选；不是只读 |
+| `/wb-memory/models` | GET | 已注册模型路由，不保证推理服务可用 |
+| `/wb-memory/debug-cwd` | GET | 最近会话cwd与工作区解析 |
 
-## 术语表
-
-| 术语 | 配置 / 代码 | 含义 |
-| --- | --- | --- |
-| **流水** | digest / `autoDigest` | 每轮对话自动追加的简短记录（做了什么 → 结论） |
-| **提炼** | distill / `autoDistill` | 历史日志 → MEMORY.md 条目（LLM 分类抽取） |
-| **整理** | compact（含于提炼巡逻） | MEMORY.md 超阈值时 LLM 压缩 |
-| **治理** | gc / `gcEnabled` | TTL 归档 + 近重复检测 + 回收站与归档超期清理 |
-| **画像** | `USER.md` | 全局用户画像（只读，由候选机制统一并入） |
-| **逻辑日** | `dayBoundaryHour` | 分界时刻默认 4 点：凌晨 3 点的会话算「昨天」 |
+`memory_search` 参数：`q`，及可选 `workspace/date_from/date_to`，同时覆盖长期记忆与近日日志。修改工具开关 `memorySearchTool` 需重载插件，常规配置读取热生效；源码变更必须重启宿主。
 
 ## 配置项
 
-- **注入预算**：`profileMaxChars` `summaryMaxChars` `logMaxChars` `entryMaxChars` `relevantTopK` `pinnedMaxChars` `weekWindowDays` `weekMaxChars` `weekSummaryDailyChars`
-- **流水与小结**：`autoDigest` `digestMaxPerDay` `digestUserChars` `digestAssistantChars` `sessionSummary` `summaryIdleMs` `summaryMinUserChars` `summaryMaxPerDay`
-- **提炼与整理**：`autoDistill` `distillProvider` `distillModel` `compactProvider` `compactModel` `compactMaxTokens` `compactRetryFeedback` `distillMaxInputChars` `distillMaxTokens` `distillTimeoutMs` `distillIntervalMs` `distillStartDelayMs`
-- **检索**：`memorySearchTool` `searchLogDays` `searchLogTopK`
-- **治理**：`gcEnabled` `logRetentionDays` `memoryCharThreshold` `dupThreshold` `trashRetentionDays` `archiveRetentionDays`
-- **其它**：`enabled` `activeProject` `dayBoundaryHour`
+| 分组 | 常用字段 |
+| --- | --- |
+| 根与开关 | `enabled activeProject workspaceRoot dayBoundaryHour` |
+| 总预算与曝光 | `injectionMaxChars dynamicBudget memoryHeat` |
+| 分层预算 | `profileMaxChars pinnedMaxChars summaryMaxChars entryMaxChars relevantTopK logMaxChars weekWindowDays weekMaxChars weekSummaryDailyChars` |
+| 流水 | `autoDigest digestMaxPerDay digestUserChars digestAssistantChars` |
+| 小结 | `sessionSummary summaryIdleMs summaryMinUserChars summaryMaxPerDay` |
+| 模型与提炼 | `autoDistill distillProvider distillModel compactProvider compactModel compactMaxTokens compactRetryFeedback distillMaxInputChars distillMaxTokens distillTimeoutMs` |
+| 调度与当天 | `distillIntervalMs distillStartDelayMs distillMaxBlocksPerSweep dailyDistill dailyDistillMinChars dailyDistillIdleMs` |
+| 检索 | `memorySearchTool searchLogDays searchLogTopK` |
+| 治理 | `gcEnabled logRetentionDays memoryCharThreshold dupThreshold trashRetentionDays archiveRetentionDays` |
 
-缺字段自动用默认值补齐；坏 JSON 备份为 `config.json.bak` 后重建；带 BOM 的合法 JSON 正常加载。BOM 这一条是踩过坑的：PowerShell 5.1 的 `Set-Content -Encoding UTF8` 必写 BOM，而 Node 的 `JSON.parse` 不接受——历史事故是 `distilled.json` 被写进 BOM 让幂等标记全丢，全部历史日志被当作未提炼重跑，各工作区 MEMORY.md 追加了大量重复条目。
+逻辑日默认凌晨4点分界，凌晨3点仍算前一天。配置支持UTF-8 BOM；坏 JSON 会备份再重建。模型路由要选择当前宿主可用的 provider/model，注册存在不等于外部网关在线或请求成功。
 
-## 已知边界
+## 版本记录
 
-<details>
-<summary>展开</summary>
+历史内部编号 **9.0.0重置为0.10.0**，不是SemVer递增，包管理器不会自动视为升级，请显式更新到新版本或本地链接。以后采用**大.中.小**：1.0.0重大/不兼容、0.11.0新增功能、0.10.1修复。
 
-- **召回靠词面不靠语义**。没有向量库，L2 召回与 `memory_search` 都是 Jaccard + 重叠率这类词面匹配，换个说法问同一个问题可能召不回。省 token 与零依赖换来的就是这个。
-- **`PINNED.md` 是唯一能无限增长的文件**。它按约定不参与整理也不参与治理（用户明确钉住的内容不该被自动改写），注入永远封顶 `pinnedMaxChars`；文件超预算时注入会标注截断，需要人工精简。
-- **整理质量取决于模型指令遵循**。实测 compact 是「恒超目标」的重灾区：deepseek-v4-flash 连续 3 天无视「条目数不少于一半」被拒收；glm-5.3 尊重条目数但输出恒超目标 27%~47%（target 6400 → 实际 9380、8000 → 10180、9600 → 12745）。教训是压缩类任务配指令遵循强的模型，靠自适应 target 兜底，别跟阈值玩军备竞赛。
-- **改 `memorySearchTool` 需要重载插件**，其余配置热生效。
-- **`import-wb-memory.mjs` 是一次性遗留脚本**，指向旧版 `~/.dsh/wb-memory` 存储，当前版本不使用它。
+| 版本 | 变化 |
+| --- | --- |
+| **0.10.5** | 修复条目间跨行空白误拆空条目，保留残缺输出整批拒收 |
+| 0.10.4 | 提炼、整理及反馈重试、画像、小结共用user任务协议冗余入口 |
+| 0.10.3 | 工作区/日期公平轮转、持久失败退避；仅在能力明确公告时请求low思考档，不换模型 |
+| 0.10.2 | 有界巡检、逐块和模型诊断，状态口径区分工作区与全库 |
+| 0.10.1 | 修复恢复扫描提前小结和用户输入300字截尾；共用闲置门禁 |
+| 0.10.0 | 独立IDF检索、持久小结、分块游标、安全追加合并、总预算、根配置与曝光统计 |
 
-</details>
-
-## 开发
+## 开发与验收
 
 ```bash
-node --check lib/index.js       # 语法检查
+node --check lib/index.js
 node --check lib/client.js
-node test/smoke.mjs             # 冒烟测试：108 项
+npm test                       # 十三个隔离套件，假模型，无真实LLM调用
+node test/perf-v010.mjs         # 可选：合成集检索性能对照
 ```
 
-冒烟测试覆盖 `retrieve` 召回 / `governance` 治理 / BOM 容错 / compact 自适应目标 / 头尾截取 / 注入装配 / 写入护栏（含 e2e：用假 llm 在窗口内真实写盘，验证冲突被拦下且并发内容留存）。
+测试覆盖原135项护栏冒烟、首轮召回、完成态/残缺输出拒收、IDF效果、预算与只读注入、分块/崩溃回执恢复、并发上限、小结门禁、诊断、调度退避、网关替换system及解析器。公开消息夹具为合成数据，不携带个人存档。小合成集的检索效果和性能不能当成真实库普遍收益。
+
+**2026-10-16真实端到端验收（0.10.5）：** 在隔离工作区验证了完整用户输入→闲置小结→自然提炼→长期入库→新会话首轮自动注入及无工具正确回答→同日志追加续跑。追加消费位置从950推进到1646，仅处理新增696字符；旧前缀SHA匹配、旧条目保留、新条目与批次回执各一份。
+
+首轮注入同时含日志回顾，不能证明模型只依赖长期记忆；本次样本通过不代表未来网关、模型或每轮调用都可靠。真实验收资料含本地会话信息，不随仓库发布。测试工作区与会话已由用户清理。
+
+[import-wb-memory.mjs](./import-wb-memory.mjs) 是面向旧存储的一次性遗留脚本，当前流水线不依赖它，运行前应自行核对路径。
 
 ## License
 
-MIT
+[MIT](./LICENSE)

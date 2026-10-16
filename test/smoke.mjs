@@ -301,13 +301,14 @@ try {
   const emem = join(eroot, ews, '.workbuddy', 'memory')
   mkdirSync(emem, { recursive: true })
   writeFileSync(join(emem, 'MEMORY.md'), '<!-- tags: 显示器 / date: 2026-08-20 / importance: high -->\n## 显示器排查\n外接显示器换线解决 NV-Failsafe\n', 'utf8')
-  writeFileSync(join(emem, '2026-08-31.md'), '# 日志\n\n- 21:00【自动】修显示器 → 换线解决 NV-Failsafe\n', 'utf8')
+  const eLogDate = idx.logicalDayStamp({})
+  writeFileSync(join(emem, eLogDate + '.md'), '# 日志\n\n- 21:00【自动】修显示器 → 换线解决 NV-Failsafe\n', 'utf8')
   process.env.DSH_WORKSPACE_ROOT = eroot
   const idx2 = await import('../lib/index.js?v8e2e=' + Date.now())
   const r = await idx2.searchWorkspaceMemory({ q: '显示器', workspace: ews })
   ok(r.ok === true && r.workspace === ews, '工具 e2e：解析到显式 workspace 参数')
   ok(r.text.includes('[长期]') && r.text.includes('显示器排查'), '工具 e2e：长期记忆面命中并带来源标记')
-  ok(r.text.includes('[日志 2026-08-31]'), '工具 e2e：日志面命中并带来源标记')
+  ok(r.text.includes('[日志 ' + eLogDate + ']'), '工具 e2e：日志面命中并带来源标记')
   const r2 = await idx2.searchWorkspaceMemory({ q: '显示器', workspace: ews, date_from: '2026-09-01', date_to: '2026-09-30' })
   ok(r2.ok === true && !r2.text.includes('显示器排查'), '工具 e2e：date_from/date_to 滤除范围外长期条目')
   const r3 = await idx2.searchWorkspaceMemory({ q: '', workspace: ews })
@@ -403,7 +404,7 @@ const MEM_SRC = [
 ].join('\n')
 const MEM_NEW = ['# 项目长期记忆', '', '## 甲条目', '压缩甲', '', '## 乙条目', '压缩乙', ''].join('\n')
 
-// 情形 1：LLM 窗口内另一个写者追加了条目 → 必须拒绝写入
+// 情形 1：LLM 窗口内纯追加完整条目 → 合并保留；非纯追加仍拒绝
 const d1 = mkdtempSync(join(tmpdir(), 'wbmem-c1-'))
 try {
   const mp1 = join(d1, 'MEMORY.md')
@@ -418,9 +419,9 @@ try {
   }
   const r1 = await idx.compactMemoryIfOver(llm1, ccfg, cdc, 'ws1', d1, mk1)
   const disk1 = readFileSync(mp1, 'utf8')
-  ok(r1 && r1.conflict === true && r1.ok === false, 'C1a：compact 撞上并发写入 → 报 conflict 而非静默覆盖')
-  ok(disk1 === MEM_SRC + '\n## 并发写入\n会话在窗口内追加的条目\n', 'C1b：并发方刚写的条目逐字节留存，LLM 结果未落盘')
-  ok(!mk1.ws1 || !mk1.ws1.__compact__, 'C1c：冲突不写 __compact__ 日锁 → 下一轮 sweep 可重试')
+  ok(r1 && r1.ok === true, 'C1a：compact 遇完整新条目纯追加 → 安全合并')
+  ok(disk1 === MEM_NEW.trimEnd() + '\n\n## 并发写入\n会话在窗口内追加的条目\n', 'C1b：整理输出与追加条目都保留')
+  ok(Boolean(mk1.ws1?.__compact__), 'C1c：合并提交成功写日锁')
 
   // 情形 2：窗口内无人改动 → 正常落盘（防护栏过度拦截）
   const d2 = mkdtempSync(join(tmpdir(), 'wbmem-c2-'))

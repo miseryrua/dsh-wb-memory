@@ -1,0 +1,354 @@
+{
+  "kind": "recall-eval-cases",
+  "generatedFrom": "lib/recall-eval.js BUILTIN_RECALL_CASES",
+  "cases": [
+    {
+      "id": "c01-zh-exact-term",
+      "kind": "zh",
+      "desc": "中文精确术语命中，弱单字干扰条目应被弱词控制过滤",
+      "query": "打包工具用哪个",
+      "memoryMd": "# 项目长期记忆\n\n<!-- tags: 工具 / date: 2026-01-10 -->\n## 打包工具选型\n乙行 用 esbuild 打包前端，速度比 webpack 快\n\n<!-- tags: 工具 / date: 2026-01-10 -->\n## 数据库选型\n乙行 主库用 PostgreSQL，读写分离走从库\n",
+      "expectedTitles": [
+        "打包工具选型"
+      ],
+      "forbiddenTitles": [
+        "数据库选型"
+      ],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c02-zh-bigram-phrase",
+      "kind": "zh",
+      "desc": "中文连续片段（定投沪深300）命中，短线条目不误召回",
+      "query": "定投沪深300的计划",
+      "memoryMd": "# 项目长期记忆\n\n## 基金定投策略\n定投沪深300指数基金，每月一千元，长期持有\n\n## 股票交易记录\n乙行 只做短线，不碰基金\n",
+      "expectedTitles": [
+        "基金定投策略"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c18-zh-bigram-boundary",
+      "kind": "zh",
+      "desc": "「上海会议」不误伤只含「会上」的条目（bigram 不按字禁的评审点）",
+      "query": "上海会议",
+      "memoryMd": "# 项目长期记忆\n\n## 上海出差记录\n乙行 去上海参加前端大会，顺便看展\n\n## 例会纪要\n乙行 会上讨论了版本发布节奏\n",
+      "expectedTitles": [
+        "上海出差记录"
+      ],
+      "forbiddenTitles": [
+        "例会纪要"
+      ],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c23-zh-natural-query",
+      "kind": "zh",
+      "desc": "自然中文问句（面板版本核验）命中标题词",
+      "query": "面板版本怎么核验",
+      "memoryMd": "# 项目长期记忆\n\n## 记忆面板版本核验\n乙行 0.12.1 部署后须重启宿主再刷新面板核验\n\n## 依赖治理记录\n乙行 卸载插件后要跑 pnpm install --lockfile-only\n",
+      "expectedTitles": [
+        "记忆面板版本核验"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c03-en-error-code",
+      "kind": "en",
+      "desc": "英文错误码 ENOENT 精确命中",
+      "query": "ENOENT startup error",
+      "memoryMd": "# 项目长期记忆\n\n## 启动报错记录\n乙行 启动时报 ENOENT，检查路径\n\n## 依赖安装记录\n乙行 pnpm install 正常\n",
+      "expectedTitles": [
+        "启动报错记录"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c04-en-words",
+      "kind": "en",
+      "desc": "普通英文词（webhook retry）命中，中文日志条目不误召回",
+      "query": "webhook retry policy",
+      "memoryMd": "# 项目长期记忆\n\n## Webhook 重试策略\n乙行 webhook 失败后指数退避重试，最多 5 次\n\n## 日志清理策略\n乙行 日志保留 30 天后删除\n",
+      "expectedTitles": [
+        "Webhook 重试策略"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c05-mixed-zh-en",
+      "kind": "mixed",
+      "desc": "中英混排查询同时用中文词与英文标识符命中",
+      "query": "部署 deploy pnpm",
+      "memoryMd": "# 项目长期记忆\n\n## 部署流程\n乙行 部署前先跑 pnpm build，再上传 dist\n\n## 回滚流程\n乙行 出问题就回滚到上一版本\n",
+      "expectedTitles": [
+        "部署流程"
+      ],
+      "forbiddenTitles": [
+        "回滚流程"
+      ],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c22-en-case-folding",
+      "kind": "en",
+      "desc": "小写 enoent 查询命中大写 ENOENT 正文，另一错误码条目靠弱单字不应入选",
+      "query": "enoent 报错怎么处理",
+      "memoryMd": "# 项目长期记忆\n\n## 启动失败排查\n乙行 报 ENOENT 时先查路径拼写\n\n## 网络超时排查\n乙行 报 ETIMEDOUT 时先查代理\n",
+      "expectedTitles": [
+        "启动失败排查"
+      ],
+      "forbiddenTitles": [
+        "网络超时排查"
+      ],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c24-en-underscore-code",
+      "kind": "en",
+      "desc": "下划线错误码 err_module_not_found 整串命中",
+      "query": "err_module_not_found 怎么解决",
+      "memoryMd": "# 项目长期记忆\n\n## Electron 启动报错\n乙行 偶发 err_module_not_found，重装依赖可解\n\n## 构建产物缺失\n乙行 dist 目录为空时先跑 build\n",
+      "expectedTitles": [
+        "Electron 启动报错"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c06-irrelevant-zh",
+      "kind": "irrelevant",
+      "desc": "与语料零词面重叠的中文查询应空返回",
+      "query": "红烧肉怎么做才好吃",
+      "memoryMd": "# 项目长期记忆\n\n## 打包工具选型\n乙行 用 esbuild 打包前端，速度比 webpack 快\n\n## 数据库选型\n乙行 主库用 PostgreSQL，读写分离走从库\n",
+      "expectedTitles": [],
+      "forbiddenTitles": [],
+      "expectEmpty": true,
+      "assert": "strict"
+    },
+    {
+      "id": "c07-irrelevant-en",
+      "kind": "irrelevant",
+      "desc": "与语料零词面重叠的英文查询应空返回",
+      "query": "best pasta recipe tonight",
+      "memoryMd": "# 项目长期记忆\n\n## 打包工具选型\n乙行 用 esbuild 打包前端，速度比 webpack 快\n\n## 数据库选型\n乙行 主库用 PostgreSQL，读写分离走从库\n",
+      "expectedTitles": [],
+      "forbiddenTitles": [],
+      "expectEmpty": true,
+      "assert": "strict"
+    },
+    {
+      "id": "c08-weak-single-char",
+      "kind": "weak",
+      "desc": "单字查询退化为允许单字命中：唯一含该字的条目应可召回",
+      "query": "备",
+      "memoryMd": "# 项目长期记忆\n\n## 备份任务约定\n乙行 每天凌晨全量备份，保留 7 天\n\n## 前端构建记录\n乙行 用 vite 构建\n",
+      "expectedTitles": [
+        "备份任务约定"
+      ],
+      "forbiddenTitles": [
+        "前端构建记录"
+      ],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c09-empty-query",
+      "kind": "empty",
+      "desc": "空字符串查询应空返回",
+      "query": "",
+      "memoryMd": "# 项目长期记忆\n\n## 备份任务约定\n乙行 每天凌晨全量备份\n",
+      "expectedTitles": [],
+      "forbiddenTitles": [],
+      "expectEmpty": true,
+      "assert": "strict"
+    },
+    {
+      "id": "c10-whitespace-query",
+      "kind": "empty",
+      "desc": "纯空白查询应空返回",
+      "query": "   ",
+      "memoryMd": "# 项目长期记忆\n\n## 备份任务约定\n乙行 每天凌晨全量备份\n",
+      "expectedTitles": [],
+      "forbiddenTitles": [],
+      "expectEmpty": true,
+      "assert": "strict"
+    },
+    {
+      "id": "c11-stopword-query",
+      "kind": "empty",
+      "desc": "全停用词中文查询分词后为空，应空返回",
+      "query": "的那个了吗",
+      "memoryMd": "# 项目长期记忆\n\n## 备份任务约定\n乙行 每天凌晨全量备份，保留 7 天\n",
+      "expectedTitles": [],
+      "forbiddenTitles": [],
+      "expectEmpty": true,
+      "assert": "strict"
+    },
+    {
+      "id": "c12-duplicate-titles",
+      "kind": "duplicate",
+      "desc": "两条同名条目都命中关键词时，按多重集口径应各计一次命中",
+      "query": "NODE_OPTIONS 怎么设置",
+      "memoryMd": "# 项目长期记忆\n\n## 环境变量约定\nNODE_OPTIONS 必须清空后再启动\n\n## 环境变量约定\nNODE_OPTIONS 保留原值即可\n",
+      "expectedTitles": [
+        "环境变量约定",
+        "环境变量约定"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c13-lifecycle-superseded",
+      "kind": "lifecycle",
+      "desc": "数字更正后旧口径条目已 superseded：同词查询只应召回现行修订条目",
+      "query": "超产奖金基数 12000",
+      "memoryMd": "# 项目长期记忆\n\n## 超产奖金阈值（旧）\n<!-- wb-memory:eyJ2IjoxLCJpZCI6Im1lbV8xMTExYWFhYTIyMjJiYmJiMzMzM2NjY2M0NDQ0ZGRkZCIsInN0YXRlIjoic3VwZXJzZWRlZCIsImJ5IjoibWVtXzk5OTllZWVlODg4OGZmZmY3Nzc3NjY2NjU1NTVhYWFhIiwiZXZlbnRzIjpbeyJhY3Rpb24iOiJjb3JyZWN0IiwiYXQiOiIyMDI2LTAyLTAxVDAwOjAwOjAwLjAwMFoiLCJyZWFzb24iOiLmlbDlrZfmm7TmraPvvJrln7rmlbAgODAwMCDmlLnkuLogMTIwMDAiLCJyZWxhdGVkIjoibWVtXzk5OTllZWVlODg4OGZmZmY3Nzc3NjY2NjU1NTVhYWFhIn1dfQ -->\n旧口径：超产奖金计算以 8000 为基数，按月结算\n\n## 超产奖金阈值（修订）\n<!-- wb-memory:eyJ2IjoxLCJpZCI6Im1lbV85OTk5ZWVlZTg4ODhmZmZmNzc3NzY2NjY1NTU1YWFhYSIsInN0YXRlIjoiY3VycmVudCIsImZyb20iOiJtZW1fMTExMWFhYWEyMjIyYmJiYjMzMzNjY2NjNDQ0NGRkZGQiLCJldmVudHMiOlt7ImFjdGlvbiI6ImNyZWF0ZWQiLCJhdCI6IjIwMjYtMDItMDFUMDA6MDA6MDAuMDAwWiIsInJlYXNvbiI6IuaVsOWtl-abtOato--8muWfuuaVsCA4MDAwIOaUueS4uiAxMjAwMCIsInJlbGF0ZWQiOiJtZW1fMTExMWFhYWEyMjIyYmJiYjMzMzNjY2NjNDQ0NGRkZGQifV19 -->\n新口径：超产奖金计算以 12000 为基数，按月结算\n",
+      "expectedTitles": [
+        "超产奖金阈值（修订）"
+      ],
+      "forbiddenTitles": [
+        "超产奖金阈值（旧）"
+      ],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c14-lifecycle-retracted-only",
+      "kind": "lifecycle",
+      "desc": "只有已撤回条目含查询词时应空返回（退场正文不当作当前事实）",
+      "query": "旧服务器 IP 是多少 192.168",
+      "memoryMd": "# 项目长期记忆\n\n## 旧服务器地址（已撤回）\n<!-- wb-memory:eyJ2IjoxLCJpZCI6Im1lbV9hYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OSIsInN0YXRlIjoicmV0cmFjdGVkIiwiZXZlbnRzIjpbeyJhY3Rpb24iOiJyZXRyYWN0IiwiYXQiOiIyMDI2LTAyLTAxVDAwOjAwOjAwLjAwMFoiLCJyZWFzb24iOiLmnI3liqHlmajlt7LkuIvnur8ifV19 -->\n旧服务部署在 192.168.1.50，端口 8080\n\n## 现行部署说明\n乙行 前端走 CDN，后端在云上\n",
+      "expectedTitles": [],
+      "forbiddenTitles": [
+        "旧服务器地址（已撤回）"
+      ],
+      "expectEmpty": true,
+      "assert": "strict"
+    },
+    {
+      "id": "c15-numeric-low-idf",
+      "kind": "numeric",
+      "desc": "「预算」在全部 6 条中出现的低区分词不产生无关召回，数字 12000 精确定位唯一条目",
+      "query": "预算上限 12000",
+      "memoryMd": "# 项目长期记忆\n\n## 预算口径 甲\n乙行 每月预算按人头摊销\n\n## 预算口径 乙\n乙行 每月预算按项目摊销\n\n## 预算口径 丙\n乙行 每月预算按季度摊销\n\n## 预算口径 丁\n乙行 每月预算按部门摊销\n\n## 字符预算上限\n乙行 注入字符预算上限是 12000\n\n## 预算口径 戊\n乙行 每月预算按区域摊销\n",
+      "expectedTitles": [
+        "字符预算上限"
+      ],
+      "forbiddenTitles": [
+        "预算口径 甲",
+        "预算口径 乙",
+        "预算口径 丙",
+        "预算口径 丁",
+        "预算口径 戊"
+      ],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c16-numeric-exact",
+      "kind": "numeric",
+      "desc": "仅数字不同（8080/9090）的两条：查 9090 应首选新端口条目",
+      "query": "端口 9090",
+      "memoryMd": "# 项目长期记忆\n\n## 旧端口记录\n乙行 服务端口 8080\n\n## 新端口记录\n乙行 服务端口 9090\n",
+      "expectedTitles": [
+        "新端口记录"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c17-title-vs-body-order",
+      "kind": "order",
+      "desc": "术语在标题的条目应排在仅在正文出现的条目之前",
+      "query": "熔断器",
+      "memoryMd": "# 项目长期记忆\n\n## 熔断器方案\n乙行 正文不提这个术语，只讲背景\n\n## 普通排障记录\n乙行 那次故障里顺带做了熔断器改造\n",
+      "expectedTitles": [
+        "熔断器方案",
+        "普通排障记录"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c20-relratio-tail",
+      "kind": "order",
+      "desc": "弱提及条目可能被 relRatio 尾部裁剪：观察当前算法特性（影子对照中用 relRatio=0 复核）",
+      "query": "灰度发布",
+      "memoryMd": "# 项目长期记忆\n\n## 灰度发布核心结论\n灰度发布 灰度发布 灰度发布，其余从略\n\n## 次要记录\n乙行 提过一次灰度发布，然后是别的内容\n\n## 无关条目\n乙行 完全别的话题\n",
+      "expectedTitles": [
+        "灰度发布核心结论"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c19-cross-project-similar",
+      "kind": "cross-project",
+      "desc": "两个项目共用「阈值」等通用参数词：正确项目应排第一，通用词入侵记为观察项",
+      "query": "定投止盈阈值",
+      "memoryMd": "# 项目长期记忆\n\n## 理财定投参数\n每月定投 1000 元，止盈阈值 20%\n\n## 超产奖计算器参数\n未达阈值计 0；超产工时×小时加班费\n",
+      "expectedTitles": [
+        "理财定投参数"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "c21-scale-corpus",
+      "kind": "scale",
+      "desc": "30 条规模语料：英文标识符 kafka 应压过只含通用词「集群」的条目排第一",
+      "query": "kafka 集群报警",
+      "memoryMd": "# 项目长期记忆\n\n## 常规事项 1\n乙行 第 1 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 2\n乙行 第 2 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 3\n乙行 第 3 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 4\n乙行 第 4 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 5\n乙行 第 5 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 6\n乙行 第 6 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 7\n乙行 第 7 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 8\n乙行 第 8 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 9\n乙行 第 9 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 10\n乙行 第 10 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 11\n乙行 第 11 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 12\n乙行 第 12 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 13\n乙行 第 13 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 14\n乙行 第 14 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 15\n乙行 第 15 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 16\n乙行 第 16 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 17\n乙行 第 17 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 18\n乙行 第 18 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 19\n乙行 第 19 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 20\n乙行 第 20 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 21\n乙行 第 21 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 22\n乙行 第 22 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 23\n乙行 第 23 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 24\n乙行 第 24 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 25\n乙行 第 25 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 26\n乙行 第 26 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 27\n乙行 第 27 条常规开发事项，涉及文档整理与代码审阅\n\n## 常规事项 28\n乙行 第 28 条常规开发事项，涉及文档整理与代码审阅\n\n## Redis 集群约定\n乙行 Redis 集群按三主三从部署\n\n## Kafka 集群约定\n乙行 Kafka 集群报警发到值班群，副本数为 3\n",
+      "expectedTitles": [
+        "Kafka 集群约定"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "strict"
+    },
+    {
+      "id": "o1-observe-generic-word-intrusion",
+      "kind": "observe",
+      "desc": "观察：三个项目都用「阈值」：通用词会把相邻项目带进候选（弱项面），正确条目仍应排第一",
+      "query": "导出文件名阈值",
+      "memoryMd": "# 项目长期记忆\n\n## 报表导出规则\n乙行 导出文件名超过阈值时自动截断加序号\n\n## 超产奖计算器参数\n未达阈值计 0；超产工时×小时加班费\n\n## 告警规则\n乙行 错误数超过阈值就报警\n",
+      "expectedTitles": [
+        "报表导出规则"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "observe"
+    },
+    {
+      "id": "o2-observe-weak-mention-tail",
+      "kind": "observe",
+      "desc": "观察：弱提及条目在默认 relRatio=0.2 下的去留（与影子对照 relRatio=0 的差异）",
+      "query": "租用办公室",
+      "memoryMd": "# 项目长期记忆\n\n## 办公室租赁合同\n乙行 租用办公室三年，押二付一\n\n## 周报草稿\n乙行 本周整理了文件，提到要租用办公室的事，另外还修了打印机\n",
+      "expectedTitles": [
+        "办公室租赁合同"
+      ],
+      "forbiddenTitles": [],
+      "expectEmpty": false,
+      "assert": "observe"
+    }
+  ]
+}

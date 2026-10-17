@@ -72,7 +72,7 @@ function makeHost() {                                   // cordis ctx 最小复�
       return dispose
     },
     inject(names, fn) {
-      for (const n of names) { if (!injections.has(n)) injections.set(n, new Set()); injections.get(n).add(fn) }
+      const key = names.join(','); if (!injections.has(key)) injections.set(key, new Set()); injections.get(key).add(fn)
     },
   }
   ctx.disposers = disposers
@@ -80,8 +80,9 @@ function makeHost() {                                   // cordis ctx 最小复�
   scopes.llm = { llm: { listProviders: () => [{ id: 'mock-provider' }] } }
   scopes.systemPrompt = { systemPrompt: { context: (reg) => { scopes.registered = reg } } }
   scopes.webServer = { effect: (f) => { try { f() } catch {}; return () => {} }, webServer: { register: () => () => {} } }
+  scopes.connection = { connection: { requestRejection: () => undefined } }
   scopes.tools = { tools: { register: () => () => {} } }
-  ctx.activate = () => { for (const [name, fns] of injections) for (const fn of fns) fn(scopes[name]) }
+  ctx.activate = () => { for (const [name, fns] of injections) for (const fn of fns) fn(Object.assign({}, ...name.split(',').map(n => scopes[n]))) }
   return ctx
 }
 

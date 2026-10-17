@@ -105,6 +105,7 @@ async function boot(sb) {
     else if (inj.deps.includes('webServer')) {
       inj.cb({
         effect: (fn) => { fn(); return () => {} },
+        connection: { requestRejection: () => undefined }, // 已认证宿主夹具；负例由route-auth测试覆盖
         webServer: { register: (r) => { sb.routes.push(r); return () => {} } },
       })
     }
@@ -118,14 +119,14 @@ function runEffect(sb, needle) {
   return false
 }
 
-// 手动提炼 = 真实面板入口（GET /wb-memory/distill?wait=1）
+// 手动提炼 = 真实面板入口（POST /api/wb-memory/distill?wait=1）
 async function callDistill(sb) {
-  const route = sb.routes.find((r) => r.path === '/wb-memory/distill')
-  if (!route) throw new Error('/wb-memory/distill 路由未注册')
+  const route = sb.routes.find((r) => r.path === '/api/wb-memory/distill')
+  if (!route) throw new Error('/api/wb-memory/distill 路由未注册')
   const res = { status: 0, body: '' }
   res.writeHead = (s) => { res.status = s }
   res.end = (b) => { res.body = b }
-  await route.handler({ method: 'GET', url: '/wb-memory/distill?wait=1' }, res)
+  await route.handler({ method: 'POST', url: '/api/wb-memory/distill?wait=1', headers: { host: '127.0.0.1:19387', origin: 'http://127.0.0.1:19387' } }, res)
   return { status: res.status, json: JSON.parse(res.body || '{}') }
 }
 
@@ -187,10 +188,10 @@ for (const [name, spec, finish, reason] of cases) await check(name, async () => 
     assert.equal(d.lastSweepEnd.failed, reason ? 1 : 0)
     assert.equal(model.sweepId, block.sweepId)
     assert.equal(model.blockId, block.blockId)
-    const route = sb.routes.find(r => r.path === '/wb-memory/status')
+    const route = sb.routes.find(r => r.path === '/api/wb-memory/status')
     const res = { writeHead() {}, end(b) { this.body = b } }
     const before = readFileSync(p, 'utf8')
-    await route.handler({ method: 'GET', url: '/wb-memory/status?workspace=' + WS }, res)
+    await route.handler({ method: 'GET', url: '/api/wb-memory/status?workspace=' + WS }, res)
     assert.equal(JSON.parse(res.body).diagnostics.scope, 'global')
     assert.equal(readFileSync(p, 'utf8'), before, 'GET不能写诊断')
   } finally { cleanup(sb) }
@@ -213,9 +214,9 @@ await check('诊断写入失败不改变提炼成功结果', async () => {
     mkdirSync(join(sb.pluginDir, 'distill-diagnostics.json'))
     await boot(sb); await callDistill(sb)
     assert.ok(dateMarker(sb, OLD_DATE)); assert.ok(memRaw(sb).includes('Windows外部沙箱边界'))
-    const route = sb.routes.find(r => r.path === '/wb-memory/status')
+    const route = sb.routes.find(r => r.path === '/api/wb-memory/status')
     const res = { writeHead() {}, end(b) { this.body = b } }
-    await route.handler({ method: 'GET', url: '/wb-memory/status?workspace=' + WS }, res)
+    await route.handler({ method: 'GET', url: '/api/wb-memory/status?workspace=' + WS }, res)
     assert.equal(JSON.parse(res.body).diagnostics.writeFailed, true)
   } finally { cleanup(sb) }
 })

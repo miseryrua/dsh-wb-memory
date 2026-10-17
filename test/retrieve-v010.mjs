@@ -229,8 +229,12 @@ const mdDup = [
 // ================= 1. 旧查重口径逐字不变 =================
 section('旧查重口径逐字不变（tokenize / jaccard / overlapCoeff / detectDuplicates）')
 if (LEGACY) {
-  for (const f of ['tokenize', 'jaccard', 'overlapCoeff', 'detectDuplicates', 'readMemoryEntries']) {
+  for (const f of ['tokenize', 'jaccard', 'overlapCoeff', 'detectDuplicates']) {
     ok(typeof NEW[f] === 'function' && String(NEW[f]) === String(LEGACY[f]), f + ' 源码逐字相同（与旧版字符串相等）')
+  }
+  // 0.12.0条目解析新增显式生命周期；旧格式仍须逐值兼容，不能再要求函数源码不变。
+  for (const corpus of [MD_NOISE, MD_CODE, MD_DATES, '# M\n自由前言\n## 标题\n正文']) {
+    ok(JSON.stringify(NEW.readMemoryEntries(corpus)) === JSON.stringify(LEGACY.readMemoryEntries(corpus)), '旧格式条目解析逐值兼容')
   }
   const samples = [
     '配置 node 报错',

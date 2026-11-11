@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { migrateMemory, preservesLifecycle } from '../lib/memory-lifecycle.js'
 import { compactStatus } from '../lib/compact-status.js'
-import { COMPACT_MIN_PROGRESS, COMPACT_BATCH_TARGET_MIN_RATIO, planCompactBatches, compactMadeProgress } from '../lib/compact-plan.js'
+import { COMPACT_MIN_PROGRESS, COMPACT_BATCH_TARGET_MIN_RATIO, planCompactBatches, compactMadeProgress, compactEntryGrowthLimit } from '../lib/compact-plan.js'
 const root = mkdtempSync(join(tmpdir(), 'wb-compact-selfheal-'))
 let passed = 0
 const test = async (name, fn) => { await fn(); passed++; console.log('PASS ' + name) }
@@ -15,7 +15,7 @@ try {
   const plugin = join(root, 'plugin'); mkdirSync(join(plugin, 'lib'), { recursive: true })
   for (const f of readdirSync(new URL('../lib/', import.meta.url))) if (f.endsWith('.js')) copyFileSync(new URL('../lib/' + f, import.meta.url), join(plugin, 'lib', f))
   writeFileSync(join(plugin, 'package.json'), JSON.stringify({ type: 'module' }))
-  const { compactMemoryIfOver, compactTargetChars, logicalDayStamp } = await import(pathToFileURL(join(plugin, 'lib/index.js')))
+  const { compactMemoryIfOver, compactTargetChars, logicalDayStamp, compactFeedbackText } = await import(pathToFileURL(join(plugin, 'lib/index.js')))
 
   // 「DSH折腾」数量级：34 条、约 23.4k 字符、阈值 12000
   const mk = (n, bodyLen) => '# 项目长期记忆\n\n' + Array.from({ length: n }, (_, i) => '<!-- tags: 测试' + i + ' / date: 2026-01-01 / importance: high -->\n## 条目' + i + '\n' + '事'.repeat(bodyLen) + '\n\n').join('')
@@ -224,6 +224,18 @@ try {
   await test('⑥ 逐批兜底④：部分成功但总进展 <10% → insufficient-progress 拒收、原文不变', async () => {
     const r = await run({ ratio: 0.97, fail: { 2: 'truncate' } })
     assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(readFileSync(r.path, 'utf8'), big)
+  })
+
+  await test('反馈文本：entryGrowthOk 分支含实际数字与由常量推导的上限；所有分支均无未展开占位符', () => {
+    const info = { after: 20000, before: 23454, threshold: 12000, newCount: 60, minCount: 17, oldCount: 34 }
+    const t = compactFeedbackText({ entryGrowthOk: false, noEntryGrowth: false }, info)
+    assert.ok(t.includes('60') && t.includes('34') && t.includes(String(compactEntryGrowthLimit(34))), t)
+    assert.equal(compactEntryGrowthLimit(34), 43); assert.ok(t.includes('超出允许上限 43 条（原文 34 条）'), t)
+    assert.ok(!t.includes('${'), t)
+    const all = { nonEmpty: false, shorter: false, underThreshold: false, keptHalfEntries: false, entryGrowthOk: false, noEntryGrowth: false, lifecyclePreserved: false }
+    for (const key of Object.keys(all)) assert.ok(!compactFeedbackText({ [key]: false }, info).includes('${'), key)
+    assert.ok(!compactFeedbackText({ ...all, entryGrowthOk: true }, info).includes('${'), 'noEntryGrowth 分支')
+    assert.ok(!compactFeedbackText(all, info).includes('${'), '全分支')
   })
 
   await test('小项：insufficient-progress 文案由 COMPACT_MIN_PROGRESS 推导', () => {

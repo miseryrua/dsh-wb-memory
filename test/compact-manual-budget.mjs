@@ -19,7 +19,7 @@ try {
     const llm = { stream: async function* (o) {
       calls.push(o)
       const input = JSON.parse(o.messages[0].content[0].text.split('<WB_MEMORY_INPUT_JSON>')[1].split('</WB_MEMORY_INPUT_JSON>')[0]).text
-      const headings = [...input.matchAll(/^## (条目\d+|单条)/gm)].map(m => m[1])
+      const headings = [...new Set([...input.matchAll(/^## (条目\d+|单条)/gm)].map(m => m[1]))] // 去重：重试轮输入附带上次输出，同一标题出现两次，旧假模型会输出重复条目（被条目数护栏 noEntryGrowth 拒收）
       if (mode === 'timeout') { await new Promise(resolve => o.signal.addEventListener('abort', resolve, { once: true })); yield { type: 'finish', reason: 'stop' }; return }
       let text = '# 项目长期记忆\n\n' + headings.map(h => '<!-- tags: 测试 / date: 2020-01-01 / importance: high -->\n## ' + h + '\n保留关键事实。\n\n').join('')
       if (mode === 'feedback' && calls.length === 1) text += '较长内容。'.repeat(300)

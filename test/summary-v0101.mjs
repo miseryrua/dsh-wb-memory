@@ -5,7 +5,9 @@ import {join,dirname} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {installSessionSummary,recoverPendingSummaries,summaryInputText,summaryConfig,bufferSnapshotKey} from '../lib/summary.js'
 import {updatePendingSession,getPendingSession} from '../lib/summary-store.js'
-const root=join(dirname(fileURLToPath(import.meta.url)),'../.tmp');mkdirSync(root,{recursive:true})
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const root=__mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-'));process.on('exit', () => { { try { __rmTmp(root, { recursive: true, force: true }) } catch {} } })
 const realNow=Date.now;let now=realNow(),seq=0,failures=0,passes=0
 Date.now=()=>now
 process.env.WB_SUMMARY_PERSIST_DELAY_MS='1000000'

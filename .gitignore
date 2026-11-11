@@ -18,3 +18,7 @@ distill-schedule.json
 *.bak*
 node_modules/
 *.tgz
+
+# 运行态：更新锁与整理重试状态
+.dsh-ops-update-*.lock
+compact-retries/

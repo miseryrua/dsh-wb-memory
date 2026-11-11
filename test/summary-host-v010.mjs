@@ -4,7 +4,9 @@ import {join,dirname} from 'node:path'
 import {fileURLToPath} from 'node:url'
 const {installSessionSummary,recoverPendingSummaries,countSummariesToday,bufferSnapshotKey}=await import(process.env.WB_SUMMARY_TEST_SRC || '../lib/summary.js')
 import {updatePendingSession} from '../lib/summary-store.js'
-const root=join(dirname(fileURLToPath(import.meta.url)),'../.tmp');mkdirSync(root,{recursive:true})
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const root=__mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-'));process.on('exit', () => { { try { __rmTmp(root, { recursive: true, force: true }) } catch {} } })
 const pause=ms=>new Promise(r=>setTimeout(r,ms))
 let seq=0, failures=0
 const keepAlive=setInterval(()=>{},1000) // 小结定时器unref，测试需独立存活锚点

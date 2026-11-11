@@ -9,8 +9,10 @@ import { createHeatTracker, readHeat } from '../lib/heat.js'
 import { configuredWorkspaceRoot, guardedWrite, buildMemoryBlock, logicalDayStamp } from '../lib/index.js'
 let passed = 0
 function A(value, label) { assert.ok(value, label); passed++ }
-const tmp = join(dirname(fileURLToPath(import.meta.url)), '..', '.tmp')
-mkdirSync(tmp, { recursive: true })
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const tmp = __mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-'))
+process.on('exit', () => { { try { __rmTmp(tmp, { recursive: true, force: true }) } catch {} } })
 const dir = mkdtempSync(join(tmp, 'core-v010-'))
 const raw = '# 日志\n' + ('- 完整流水😀一二三四五六七八九\n'.repeat(60))
 let marker, chunks = [], consumed = ''

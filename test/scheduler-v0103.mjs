@@ -7,7 +7,10 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PLUGIN_COPY = resolve(HERE, '..')
 const SRC_LIB = process.env.WB_MEM_SRC ? resolve(process.env.WB_MEM_SRC) : join(PLUGIN_COPY, 'lib')
 const SRC_PKG = existsSync(join(SRC_LIB, '..', 'package.json')) ? join(SRC_LIB, '..', 'package.json') : join(PLUGIN_COPY, 'package.json')
-const TMP_ROOT = join(PLUGIN_COPY, '.tmp')
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const TMP_ROOT = __mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-'))
+process.on('exit', () => { if (process.env.WB_MEM_KEEP !== '1') { try { __rmTmp(TMP_ROOT, { recursive: true, force: true }) } catch {} } })
 const KEEP = process.env.WB_MEM_KEEP === '1'
 const ENV_BACKUP = process.env.DSH_WORKSPACE_ROOT
 

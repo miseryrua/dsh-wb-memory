@@ -24,6 +24,8 @@
 //   seam 回调签名范例：dsh-goal-round-driver/lib/index.js:245、dsh-acp/lib/index.js:1107
 
 import { readFileSync, writeFileSync, existsSync, copyFileSync, unlinkSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
@@ -89,7 +91,8 @@ function makeHost() {                                   // cordis ctx 最小复�
 export async function runRegression(opts = {}) {
   const sourceEntry = resolve(opts.entry || process.env.WB_MEMORY_ENTRY || join(HERE, '..', 'lib', 'index.js'))
   // 被测目录始终只读：即便调用者给真实安装路径，也只在独立沙箱写配置。
-  const sandbox = join(HERE, '..', '.tmp', 'recall-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8))
+  const sandbox = __mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-recall-'))
+  process.on('exit', () => { { try { __rmTmp(sandbox, { recursive: true, force: true }) } catch {} } })
   mkdirSync(join(sandbox, 'lib'), { recursive: true })
   const sourceLib = dirname(sourceEntry)
   for (const name of readdirSync(sourceLib)) if (name.endsWith('.js')) copyFileSync(join(sourceLib, name), join(sandbox, 'lib', name))

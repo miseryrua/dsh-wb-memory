@@ -31,8 +31,11 @@ const row={...audit, workspace:'A',query:'secret_query',body:'secret_body',entri
 store.record(row)
 test('白名单与长度上限且selected优先',()=>{const r=store.snapshot('A');assert.equal(r.candidates.length,1);assert.equal(r.candidates[0].title,'chosen');assert.equal(r.omitted,1);assert.equal(r.counts['no-match'],1);assert.ok(!JSON.stringify(r).includes('secret_'))})
 test('工作区隔离/内存上限/快照不可改内部',()=>{const r=store.snapshot('A');r.mode='changed';assert.notEqual(store.snapshot('A').mode,'changed');assert.equal(store.snapshot('B'),null);store.record({...row,workspace:'B'});store.record({...row,workspace:'C'});assert.equal(store.snapshot('A'),null);store.clear();assert.equal(store.snapshot('C'),null)})
-// 独立插件副本，绝不改真实配置或用户记忆。保留产物便于排错，不调用删除。
-const sandbox=join(root,'.tmp','panel-'+Date.now()), plugin=join(sandbox,'plugin'), wsroot=join(sandbox,'workspaces')
+// 独立插件副本，绝不改真实配置或用户记忆。临时目录位于 os.tmpdir()，进程退出时自动清理。
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const sandbox=__mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-')), plugin=join(sandbox,'plugin'), wsroot=join(sandbox,'workspaces')
+process.on('exit', () => { { try { __rmTmp(sandbox, { recursive: true, force: true }) } catch {} } })
 mkdirSync(join(plugin,'lib'),{recursive:true})
 for(const f of readdirSync(join(root,'lib')))if(f.endsWith('.js'))copyFileSync(join(root,'lib',f),join(plugin,'lib',f))
 copyFileSync(join(root,'package.json'),join(plugin,'package.json'))

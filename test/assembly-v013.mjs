@@ -4,7 +4,10 @@ import { mkdirSync, readdirSync, copyFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 const root=join(dirname(fileURLToPath(import.meta.url)),'..')
-const sandbox=join(root,'.tmp','assembly-'+Date.now()), plugin=join(sandbox,'plugin'), wsroot=join(sandbox,'workspaces'), cwd=join(wsroot,'A')
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const sandbox=__mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-')), plugin=join(sandbox,'plugin'), wsroot=join(sandbox,'workspaces'), cwd=join(wsroot,'A')
+process.on('exit', () => { { try { __rmTmp(sandbox, { recursive: true, force: true }) } catch {} } })
 mkdirSync(join(plugin,'lib'),{recursive:true});mkdirSync(join(cwd,'.workbuddy','memory'),{recursive:true})
 for(const f of readdirSync(join(root,'lib')))if(f.endsWith('.js'))copyFileSync(join(root,'lib',f),join(plugin,'lib',f))
 copyFileSync(join(root,'package.json'),join(plugin,'package.json'))

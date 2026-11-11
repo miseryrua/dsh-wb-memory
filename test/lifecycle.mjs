@@ -26,7 +26,7 @@ const {mkdirSync,writeFileSync,readFileSync}=await import('node:fs')
 const {fileURLToPath}=await import('node:url')
 const {join,dirname}=await import('node:path')
 const idx=await import('../lib/index.js')
-const compactRoot=join(dirname(fileURLToPath(import.meta.url)),'..','.tmp','lifecycle-compact-'+Date.now())
+const __fsT=await import('node:fs'),__osT=await import('node:os');const __tmpBase=__fsT.mkdtempSync(join(__osT.tmpdir(),'dsh-wb-memory-test-'));process.on('exit',()=>{try{__fsT.rmSync(__tmpBase,{recursive:true,force:true})}catch{}});const compactRoot=join(__tmpBase,'lifecycle-compact-'+Date.now())
 const large=migrateMemory('## 历史约定'+String.fromCharCode(10)+'原文不可改。'+String.fromCharCode(10)+'## 当前长条目'+String.fromCharCode(10)+'正文内容。'.repeat(1200)).text
 const firstId=inspectMemory(large).records[0].meta.id
 const history=applyMemoryAction(large,{revision:memoryRevision(large),id:firstId,action:'retract',reason:'明确撤回'}).text

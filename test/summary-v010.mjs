@@ -50,8 +50,11 @@ function ok(cond, name) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// 显式 temp 根：本仓库 .tmp/（不依赖 os.tmpdir()）
-const TMP_ROOT = join(dirnameSafe(fileURLToPath(import.meta.url)), '..', '.tmp')
+// 显式 temp 根：os.tmpdir() 下 mkdtemp，进程退出时清理
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const TMP_ROOT = __mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-'))
+process.on('exit', () => { { try { __rmTmp(TMP_ROOT, { recursive: true, force: true }) } catch {} } })
 function dirnameSafe(p) {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
   return i < 0 ? '.' : p.slice(0, i)

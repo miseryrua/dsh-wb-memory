@@ -9,7 +9,7 @@
  * 退出码：全部通过 0，有失败 1（不用 process.exit，便于 import 方式复用）。
  *
  * 隔离设计：
- *   - 被测源码（默认 = 本测试所在插件副本的 lib/）整体复制到 <副本>/.tmp/<stamp>/plugin；
+ *   - 被测源码（默认 = 本测试所在插件副本的 lib/）整体复制到 <系统临时目录>/dsh-wb-memory-test-随机后缀/<stamp>/plugin；
  *     插件用 import.meta.url 推出的 PLUGIN_ROOT 就是该副本目录，所以 config.json /
  *     distilled.json / USER.md / USER-CANDIDATES.md 全部落在沙箱内；
  *   - process.env.DSH_WORKSPACE_ROOT 也指向沙箱内的工作区根，
@@ -32,7 +32,10 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PLUGIN_COPY = resolve(HERE, '..')
 const SRC_LIB = process.env.WB_MEM_SRC ? resolve(process.env.WB_MEM_SRC) : join(PLUGIN_COPY, 'lib')
 const SRC_PKG = existsSync(join(SRC_LIB, '..', 'package.json')) ? join(SRC_LIB, '..', 'package.json') : join(PLUGIN_COPY, 'package.json')
-const TMP_ROOT = join(PLUGIN_COPY, '.tmp')
+import { mkdtempSync as __mkdtemp, rmSync as __rmTmp } from 'node:fs'
+import { tmpdir as __osTmpdir } from 'node:os'
+const TMP_ROOT = __mkdtemp(join(__osTmpdir(), 'dsh-wb-memory-test-'))
+process.on('exit', () => { if (process.env.WB_MEM_KEEP !== '1') { try { __rmTmp(TMP_ROOT, { recursive: true, force: true }) } catch {} } })
 const KEEP = process.env.WB_MEM_KEEP === '1'
 const ENV_BACKUP = process.env.DSH_WORKSPACE_ROOT
 
@@ -354,7 +357,8 @@ const MAIN = async () => {
     A(before.equals(after), 'MEMORY.md 逐字节未变（失败不得覆盖）', before.length + ' -> ' + after.length)
     A(cm && cm.ok === false, 'compact 结果记为 ok:false', JSON.stringify(cm && cm.ok))
     A(String(r.json.results[WS + '/compact'] || '').includes('kept original'), 'results 记 kept original', r.json.results[WS + '/compact'])
-    A(String(r.json.results[WS + '/compact'] || '').includes('COMPACT_FAIL'), '真实失败原因未被掩盖（可诊断）', r.json.results[WS + '/compact'])
+    A(cm.errorCode === 'llm-error' && String(r.json.results[WS + '/compact'] || '').includes('llm-error'), '模型错误受控分类可诊断（不透上游任意错误）', r.json.results[WS + '/compact'])
+    A(!JSON.stringify(cm).includes('stream broke mid-compaction'), '整理持久状态不保存上游错误正文')
     A(Boolean(cm) && typeof cm.day === 'string' && cm.day.length === 10, '失败也写下当日 __compact__ 日锁（同日不反复重试）', JSON.stringify(cm && cm.day))
     cleanup(sb)
   }

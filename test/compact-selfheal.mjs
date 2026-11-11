@@ -34,7 +34,7 @@ try {
     input = input.split('\n\n--- 上次输出')[0].replace(/^--- MEMORY\.md 全文 ---\n/, '') // 重试轮只取原文
     return { full, input, target: Number((/整理压缩到 (\d+) 字符以内/.exec(full) || [])[1]) }
   }
-  function makeLlm({ ratio, cap, grow = 0, tamper, calls }) {
+  function makeLlm({ ratio, cap, grow = 0, tamper, calls, fail = {} }) {
     return { stream: async function* (o) {
       calls.push(o)
       const { input, target } = inputOf(o)
@@ -46,17 +46,19 @@ try {
       } else out = shrink(input, ratio)
       for (let i = 0; i < grow; i++) out += '\n\n## 拆分出的条目' + i + '\n拆条内容\n'
       if (tamper) out = tamper(out)
-      yield { type: 'text-delta', text: out }; yield { type: 'finish', reason: 'stop' }
+      const f = fail[calls.length]
+      if (f === 'few') out = out.split(/\n(?=<!-- tags)/).slice(0, 1).join('\n') // 批内只剩 1 条（不足一半）
+      yield { type: 'text-delta', text: f === 'truncate' ? out.slice(0, 50) : out }; yield { type: 'finish', reason: f === 'truncate' ? 'max-tokens' : 'stop' }
     } }
   }
   let seq = 0
-  async function run({ raw = big, ratio = 0.7, cap, grow, tamper, config = cfg, markers = {}, dir, name } = {}) {
+  async function run({ raw = big, ratio = 0.7, cap, grow, tamper, fail, config = cfg, markers = {}, dir, name } = {}) {
     name = name || 'ws' + (++seq)
     dir = dir || join(root, name)
     if (!existsSync(dir)) mkdirSync(dir)
     const path = join(dir, 'MEMORY.md'); writeFileSync(path, raw)
     const calls = []
-    const result = await compactMemoryIfOver(makeLlm({ ratio, cap, grow, tamper, calls }), config, dc, name, dir, markers)
+    const result = await compactMemoryIfOver(makeLlm({ ratio, cap, grow, tamper, calls, fail }), config, dc, name, dir, markers)
     return { dir, path, calls, markers, result, name }
   }
 
@@ -159,19 +161,73 @@ try {
     assert.equal(r.result.target, 9600); assert.equal(r.result.ok, true)
   })
 
-  await test('④ 条目数护栏：模型拆条（34→36）即使已压到70% 也拒收，原文不变', async () => {
-    const r = await run({ ratio: 0.7, grow: 1 }) // 每批多拆 1 条 → 36 条
-    assert.equal(r.result.ok, false); assert.equal(r.result.checks.noEntryGrowth, false); assert.equal(r.result.errorCode, 'validation')
-    assert.equal(r.result.newCount, 36); assert.equal(r.result.oldCount, 34)
-    assert.equal(readFileSync(r.path, 'utf8'), big)
-    assert.ok(compactStatus(r.markers[r.name].__compact__).failedChecks.includes('noEntryGrowth'))
+  await test('④ 条目数有界容忍：真实数量级 34→40 条、缩短约30%仍超阈值 → 接受，warnings 同时含超阈值与条目数变化', async () => {
+    const r = await run({ ratio: 0.7, grow: 3 }) // 每批 17+3 → 40 条
+    const res = r.result
+    assert.equal(res.ok, true, JSON.stringify(res)); assert.equal(res.oldCount, 34); assert.equal(res.newCount, 40)
+    assert.equal(res.checks.noEntryGrowth, false); assert.equal(res.checks.entryGrowthOk, true)
+    assert.match(res.warnings, /仍超阈值 \d+ 字符/); assert.match(res.warnings, /条目数由 34 增至 40/)
+    assert.ok(res.after < big.length * 0.9); assert.equal(count(readFileSync(r.path, 'utf8')), 40)
+    assert.equal(readFileSync(join(r.dir, 'archive', 'MEMORY.bak-' + logicalDayStamp(cfg) + '.md'), 'utf8'), big)
+    const st = compactStatus(r.markers[r.name].__compact__)
+    assert.equal(st.lastOk, true); assert.match(st.warnings, /仍超容量阈值/); assert.match(st.warnings, /条目数由 34 增至 40/)
   })
 
-  await test('④ 条目数护栏：单批路径同样拒收拆条（含同轮重试后）', async () => {
-    const raw = mk(12, 400)
-    const r = await run({ raw, ratio: 0.5, grow: 2, config: { memoryCharThreshold: 2000, compactMaxTokens: 8000 } })
-    assert.equal(r.calls.length, 2, '首轮校验失败触发一次反馈重试'); assert.equal(r.result.ok, false); assert.equal(r.result.checks.noEntryGrowth, false)
-    assert.equal(readFileSync(r.path, 'utf8'), raw)
+  await test('④ 条目数硬上限：34→60 条（失控拆条）→ 拒收、原文不变', async () => {
+    const r = await run({ ratio: 0.7, grow: 13 }) // 每批 17+13=30 > ceil(17×1.25)=22 → 两批均回退 → 全失败
+    assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'validation')
+    assert.equal(readFileSync(r.path, 'utf8'), big); assert.ok(r.markers[r.name].__compact__.day)
+  })
+
+  await test('④ 条目数硬上限：重复输出（同一批内容出现两遍）→ 拒收、原文不变', async () => {
+    const r = await run({ ratio: 0.7, tamper: o => o + '\n\n' + o })
+    assert.equal(r.result.ok, false); assert.equal(readFileSync(r.path, 'utf8'), big)
+  })
+
+  await test('④ 单批路径：拆条在容忍内（12→14）首轮触发反馈重试、第二轮带警告接受；超上限（12→17）拒收', async () => {
+    const raw = mk(12, 400), config = { memoryCharThreshold: 2000, compactMaxTokens: 8000 }
+    const ok = await run({ raw, ratio: 0.5, grow: 2, config })
+    assert.equal(ok.calls.length, 2, '首轮因 noEntryGrowth 触发一次反馈重试'); assert.equal(ok.result.ok, true); assert.match(ok.result.warnings, /条目数由 12 增至 14/)
+    const bad = await run({ raw, ratio: 0.5, grow: 5, config })
+    assert.equal(bad.calls.length, 2); assert.equal(bad.result.ok, false); assert.equal(bad.result.checks.entryGrowthOk, false)
+    assert.equal(readFileSync(bad.path, 'utf8'), raw)
+  })
+
+  const planBig = planCompactBatches(big, 12000, 9600)
+  await test('⑥ 逐批兜底①：第2批截断 → 第1批落盘、第2批原文逐字保留、带警告、备份存在', async () => {
+    const r = await run({ ratio: 0.3, fail: { 2: 'truncate' } })
+    const res = r.result, after = readFileSync(r.path, 'utf8')
+    assert.equal(r.calls.length, 2, '请求数上限不变'); assert.equal(res.ok, true, JSON.stringify(res)); assert.equal(res.fallbackBatches, 1); assert.equal(res.fallbackError, 'llm-truncated')
+    assert.match(res.warnings, /1 批未整理，保留原文/); assert.match(res.warnings, /仍超阈值/)
+    assert.ok(after.startsWith(planBig.prefix)); assert.ok(after.endsWith(planBig.batches[1].text.trim() + '\n'), '第2批原文逐字保留（字节不变）')
+    assert.ok(!after.includes(planBig.batches[0].text.trim()), '第1批已整理'); assert.ok(after.length < big.length * 0.9)
+    assert.equal(count(after), 34); assert.equal(readFileSync(join(r.dir, 'archive', 'MEMORY.bak-' + logicalDayStamp(cfg) + '.md'), 'utf8'), big)
+    const st = compactStatus(r.markers[r.name].__compact__)
+    assert.equal(st.fallbackBatches, 1); assert.match(st.warnings, /1 批未整理/)
+  })
+
+  await test('⑥ 逐批兜底②：第1批条目数不足一半 → 第1批原文保留、第2批整理结果保留', async () => {
+    const r = await run({ ratio: 0.3, fail: { 1: 'few' } })
+    const after = readFileSync(r.path, 'utf8')
+    assert.equal(r.calls.length, 2); assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.result.fallbackBatches, 1); assert.equal(r.result.fallbackError, 'validation')
+    assert.ok(after.startsWith(planBig.prefix + planBig.batches[0].text.trim())); assert.ok(!after.includes(planBig.batches[1].text.trim()))
+    assert.equal(count(after), 34)
+  })
+
+  await test('⑥ 逐批兜底③：两批都失败 → 拒收、原文不变、日锁照旧、errorCode 为首个真实原因', async () => {
+    const r = await run({ ratio: 0.3, fail: { 1: 'truncate', 2: 'few' } })
+    assert.equal(r.calls.length, 2); assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'llm-truncated')
+    assert.equal(readFileSync(r.path, 'utf8'), big); assert.ok(r.markers[r.name].__compact__.day)
+    assert.equal(await compactMemoryIfOver(makeLlm({ ratio: 0.3, calls: [] }), cfg, dc, r.name, r.dir, r.markers), null)
+  })
+
+  await test('⑥ 逐批兜底④：部分成功但总进展 <10% → insufficient-progress 拒收、原文不变', async () => {
+    const r = await run({ ratio: 0.97, fail: { 2: 'truncate' } })
+    assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(readFileSync(r.path, 'utf8'), big)
+  })
+
+  await test('小项：insufficient-progress 文案由 COMPACT_MIN_PROGRESS 推导', () => {
+    assert.ok(compactStatus({ ok: false, errorCode: 'insufficient-progress', checks: { underThreshold: false } }).errorMessage.includes(Math.round(COMPACT_MIN_PROGRESS * 100) + '%'))
   })
 
   await test('④ 生命周期护栏：删除管理标记的输出（即便压缩进展充分）拒收', async () => {

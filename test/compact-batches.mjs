@@ -32,8 +32,9 @@ try {
  assert.ok(good.calls.every(c=>c.maxTokens===4000))
  assert.equal(good.result.reasoningChars,6);assert.ok(good.result.outputChars>0)
  assert.equal((readFileSync(join(good.dir,'MEMORY.md'),'utf8').match(/^## /gm)||[]).length,12)
- const bad=await run('bad','truncated');assert.equal(bad.result.ok,false);assert.equal(bad.result.errorCode,'llm-truncated');assert.equal(bad.calls.length,2)
- assert.equal(readFileSync(join(bad.dir,'MEMORY.md'),'utf8'),raw,'第二批截断不得部分写回')
+ // 逐批兜底（任务 A 评审）：第二批截断 → 第一批整理结果落盘、第二批原文逐字保留，不写残缺输出
+ const bad=await run('bad','truncated');assert.equal(bad.result.ok,true);assert.equal(bad.result.fallbackBatches,1);assert.equal(bad.result.fallbackError,'llm-truncated');assert.equal(bad.calls.length,2)
+ const badAfter=readFileSync(join(bad.dir,'MEMORY.md'),'utf8');assert.ok(badAfter.length<raw.length);assert.ok(badAfter.includes('事实'.repeat(900)),'第二批原文保留')
  const again=await compactMemoryIfOver({},cfg,{},'bad',bad.dir,bad.markers);assert.equal(again,null,'失败仍保留日锁')
  const changed=await run('changed','append');assert.match(readFileSync(join(changed.dir,'MEMORY.md'),'utf8'),/并发新事实/)
  console.log('安全分批与截断回归通过')

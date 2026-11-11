@@ -318,4 +318,104 @@ test('带注释的 MEMORY.md 与手工去注释的等价 MEMORY.md 组装结果�
   assert.equal(assemble(dirty, '', baseCfg).block, assemble(clean, '', baseCfg).block)
 })
 
+// ---------------- 9. 返工：长度归一 / 指令措辞带偏 / 词边界伪 bigram / 无相关回落 ----------------
+const topics = ['打印机驱动','差旅报销','周会安排','备份策略','邮箱配置','路由器轮换','门禁卡发放','茶水间清洁','会议室预订','网络带宽']
+const fillMd = topics.map((x) => '## ' + x + '\n' + x + '相关的日常约定，按行政流程办理。\n').join('\n')
+test('指令措辞带偏：仅正文含稀有指令词的条目不注入（无需硬编码具体词）', () => {
+  // 「评审/方案」只在无关条目正文里各出现一次，idf 高，但不在任何标题/标签里
+  const md = '# M\n\n## 缓存淘汰策略\n缓存使用 LRU，容量一千条。\n\n## 采购流程\n采购须评审方案后签字，再交给财务。\n\n' + fillMd
+  const q = '帮我看看缓存还有没有可以改进的，你只负责出方案与评审，其他交给别人'
+  const inj = titlesOf(rankMemory(md, q, { k: 5, scene: 'inject' }))
+  assert.deepEqual(inj, ['缓存淘汰策略'])
+  assert.ok(titlesOf(OLD.rankMemory(md, q, { k: 5 })).includes('采购流程'), '旧实现会被指令词带进来')
+})
+test('长条目不能靠篇幅压过短而切题的条目（inject 场景）', () => {
+  const longBody = Array.from({ length: 60 }, () => '部署脚本更新说明，部署前检查部署环境。').join('')
+  const md = '# M\n\n## 部署排障清单\n' + longBody + '\n\n## 部署回滚口令\n回滚口令是 rollback-now。\n\n' + fillMd
+  const q = '部署回滚口令'
+  const search = titlesOf(rankMemory(md, q, { k: 5 }))
+  const inj = titlesOf(rankMemory(md, q, { k: 5, scene: 'inject' }))
+  assert.equal(inj[0], '部署回滚口令')
+  assert.ok(search.includes('部署排障清单'), 'search 口径不变')
+})
+test('词边界伪 bigram 单点锚点不放行；库内无相关条目时回落摘要', () => {
+  const md = '# M\n\n## 子代理与团队约定\n子代理按需启动。\n\n' + fillMd
+  const q = '对话整理与文件整理的设置是否可以分开'
+  assert.deepEqual(rankMemory(md, q, { k: 5, scene: 'inject' }), [])
+  const { block, trace } = assemble(md, q)
+  assert.ok(block.includes('### 长期记忆 / 摘要（无高度相关条目'))
+  assert.equal(trace.mode, 'fallback-summary')
+})
+test('no-anchor 诊断原因 + 面板文案 + 常量集中', () => {
+  const md = '# M\n\n## 采购流程\n采购须评审方案后签字。\n\n## 缓存淘汰策略\n缓存使用 LRU。\n\n' + fillMd
+  let a = null
+  rankMemory(md, '缓存 评审方案', { k: 5, scene: 'inject', onDiagnostics: (x) => { a = x } })
+  assert.ok(a.candidates.some((c) => c.reason === 'no-anchor'), JSON.stringify(a.candidates.map((c) => c.reason)))
+  assert.ok(/'no-anchor':/.test(readFileSync(join(root, 'lib', 'client.js'), 'utf8')))
+  // 常量集中在 INJECT_SCENE_DEFAULTS；长度归一经快照对照后移除（排序/入选无收益），常量不应残留
+  for (const k of ['anchorMinIdf', 'anchorMinCjk', 'headIdentMinIdf', 'echoMaxTitleCjk']) assert.ok(k in INJECT_SCENE_DEFAULTS)
+  assert.ok(!('lengthB' in INJECT_SCENE_DEFAULTS))
+})
+
+// ---------------- 10. 主题证据门槛（E1–E4）：全部虚构语料 ----------------
+const inj = (md, q, o = {}) => titlesOf(rankMemory(md, q, { k: 5, scene: 'inject', ...o }))
+const evidenceMd = (extra) => '# M\n\n' + extra + '\n\n' + fillMd
+test('E4：仅首行出现的 API 专名（查询不加反引号、标题/标签没有）被召回', () => {
+  const md = evidenceMd('## 提交流程要点\nsafeCommit 会在落盘前完整比对原始内容，不一致即拒绝。\n后续补充说明若干。\n\n## 其他约定\n报销按月办理。')
+  assert.deepEqual(inj(md, 'safeCommit 的完整比对用于什么'), ['提交流程要点'])
+  assert.deepEqual(inj(md, '想问问 safe-commit_v2 流程'), [], '词形相近但库里没有的标识符不放行')
+})
+test('E4：同样的专名只在正文远处顺带出现 → 不算主题，不召回', () => {
+  const md = evidenceMd('## 值班交接规则\n交接时先清点工具，再确认值班表。\n工具清单见附录。\n第三行再说明。\n其实某个脚本里调用过 safeCommit 这个接口，顺带一提。')
+  assert.deepEqual(inj(md, 'safeCommit 的完整比对用于什么'), [])
+  let a = null
+  rankMemory(md, 'safeCommit 的完整比对用于什么', { k: 5, scene: 'inject', onDiagnostics: (x) => { a = x } })
+  assert.ok(a.candidates.some((c) => c.title === '值班交接规则' && c.reason === 'no-anchor'), JSON.stringify(a.candidates.map((c) => [c.title, c.reason])))
+})
+test('E4 形态判据只看词形：camelCase / 字母数字混合 / 连接符多段词均成立，普通英文词不成立', () => {
+  for (const [name, q] of [['camel', 'applyPatchSet 做什么'], ['alnum', 'foo2bar 做什么'], ['joined', 'foo-bar-baz 做什么'], ['path', 'a/b/cfg 做什么']]) {
+    const md = evidenceMd('## 杂项记录\n' + q.split(' ')[0] + ' 在这里首次定义。\n后续略。')
+    assert.deepEqual(inj(md, q), ['杂项记录'], name)
+  }
+  const plain = evidenceMd('## 杂项记录\nrollout 在这里首次定义。\n后续略。')
+  assert.deepEqual(inj(plain, 'rollout 做什么'), [], '普通英文词只在首行出现不算标识符形态')
+})
+test('E3：单个短中文主题词在标题与正文一致出现 → 召回（含单词查询）', () => {
+  const md = evidenceMd('## 缓存淘汰策略\n缓存使用 LRU，容量一千条。\n\n## 采购流程\n采购须评审方案后签字。')
+  assert.deepEqual(inj(md, '缓存'), ['缓存淘汰策略'])
+  assert.deepEqual(inj(md, '帮我看看缓存还有没有可以改进的，其他交给别人'), ['缓存淘汰策略'])
+})
+test('E3：标题里有泛词、正文不谈 → 拦；长标题+正文顺带出现 → 也拦', () => {
+  const blocked = evidenceMd('## 会议室门禁权限记录\n只讲门禁卡与登记表。')
+  assert.deepEqual(inj(blocked, '想问问机房权限怎么弄'), [], '标题有「权限」、正文不谈')
+  const longTitle = evidenceMd('## 会议室门禁卡发放登记与补办流程以及访客预约和值班巡检规则汇总\n这里顺带提到权限一次，其余讲流程。')
+  assert.deepEqual(inj(longTitle, '想问问机房权限怎么弄'), [], '长标题里单个 bigram 只算顺带')
+})
+test('稀有指令词带偏：命中只来自首行/正文的指令性措辞 → 拦；真主题仍在', () => {
+  const md = evidenceMd('## 存储配额说明\n配额按部门划分。\n\n## 年度计划\n计划由甲方统筹，乙方负责复核备案。')
+  assert.deepEqual(inj(md, '帮我看看存储配额，你只负责复核与备案，其他统筹给别人'), ['存储配额说明'])
+})
+test('无相关条目：整库无证据 → 空 → 组装回落摘要', () => {
+  const md = evidenceMd('## 年度计划\n计划由甲方统筹，乙方负责复核备案。')
+  assert.deepEqual(inj(md, '你负责统筹与复核，具体备案由别人完成'), [])
+  const { trace } = assemble(md, '你负责统筹与复核，具体备案由别人完成')
+  assert.equal(trace.mode, 'fallback-summary')
+})
+test('显式关闭：minContentIdf:0 连同证据门槛一并关闭，返回无证据条目', () => {
+  const md = evidenceMd('## 年度计划\n计划由甲方统筹，乙方负责复核备案。')
+  const q = '你负责统筹与复核，具体备案由别人完成'
+  assert.deepEqual(inj(md, q), [])
+  assert.ok(inj(md, q, { minContentIdf: 0, relRatio: 0 }).includes('年度计划'))
+})
+test('独立开关：requireTopicEvidence:false 只关证据门槛，generic-only 照常生效', () => {
+  const md = evidenceMd('## 年度计划\n计划由甲方统筹，乙方负责复核备案。')
+  const q = '你负责统筹与复核，具体备案由别人完成'
+  assert.ok(inj(md, q, { requireTopicEvidence: false }).includes('年度计划'))
+  let a = null
+  rankMemory(mdFull, QUERY, { k: 5, scene: 'inject', requireTopicEvidence: false, onDiagnostics: (x) => { a = x } })
+  assert.ok(a.candidates.some((c) => c.reason === 'generic-only'), 'generic-only 不受该开关影响')
+  // search 场景从不受该选项影响
+  assert.deepEqual(titlesOf(rankMemory(md, q, { k: 5 })), titlesOf(rankMemory(md, q, { k: 5, requireTopicEvidence: true })))
+})
+
 console.log('injection-slim: ' + n + ' passed')

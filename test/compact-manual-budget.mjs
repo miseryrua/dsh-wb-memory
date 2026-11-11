@@ -19,7 +19,7 @@ try {
     const llm = { stream: async function* (o) {
       calls.push(o)
       const input = JSON.parse(o.messages[0].content[0].text.split('<WB_MEMORY_INPUT_JSON>')[1].split('</WB_MEMORY_INPUT_JSON>')[0]).text
-      const headings = [...input.matchAll(/^## (条目\d+|单条)/gm)].map(m => m[1])
+      const headings = [...new Set([...input.matchAll(/^## (条目\d+|单条)/gm)].map(m => m[1]))] // 去重：重试轮输入附带上次输出，同一标题出现两次，旧假模型会输出重复条目（被条目数护栏 noEntryGrowth 拒收）
       if (mode === 'timeout') { await new Promise(resolve => o.signal.addEventListener('abort', resolve, { once: true })); yield { type: 'finish', reason: 'stop' }; return }
       let text = '# 项目长期记忆\n\n' + headings.map(h => '<!-- tags: 测试 / date: 2020-01-01 / importance: high -->\n## ' + h + '\n保留关键事实。\n\n').join('')
       if (mode === 'feedback' && calls.length === 1) text += '较长内容。'.repeat(300)
@@ -43,8 +43,10 @@ try {
   assert.ok(automatic.result.ok); assert.deepEqual(automatic.calls.map(c => c.maxTokens), [4000, 4000])
   assert.equal(automatic.result.tokenBudget, 'configured'); assert.equal(automatic.result.maxTokens, 8000)
   const bad = await run('truncated', 'provider-default', 'truncated')
-  assert.equal(bad.result.errorCode, 'llm-truncated'); assert.equal(bad.calls.length, 2)
-  assert.equal(readFileSync(join(bad.dir, 'MEMORY.md'), 'utf8'), bad.raw, 'failed second batch must never partially write')
+  // 逐批兜底（任务 A 评审）：第二批截断 → 该批回退原文、第一批结果保留；截断的残缺输出绝不写入
+  assert.equal(bad.calls.length, 2); assert.equal(bad.result.ok, true); assert.equal(bad.result.fallbackBatches, 1); assert.equal(bad.result.fallbackError, 'llm-truncated')
+  const badAfter = readFileSync(join(bad.dir, 'MEMORY.md'), 'utf8')
+  assert.ok(badAfter.length < bad.raw.length && badAfter.includes('事实'.repeat(900)), 'truncated batch falls back to original text, never partial model output')
   assert.equal(await compactMemoryIfOver({}, cfg, {}, 'truncated', bad.dir, bad.markers), null, 'failed manual operation still records logical day lock')
   const single = '# 项目长期记忆\n\n## 单条\n' + '事实'.repeat(2500)
   const feedback = await run('feedback', 'provider-default', 'feedback', { ...cfg, memoryCharThreshold: 1000 }, single)

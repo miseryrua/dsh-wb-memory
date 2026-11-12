@@ -45,6 +45,7 @@
     "test/fixtures/recall-eval-cases.json",
     "test/fixtures/retrieve-v010-legacy.mjs",
     "test/fixtures/retrieve-before-panel.mjs",
+    "test/fixtures/retrieve-before-injection-slim.mjs",
     "test/fixtures/wsroot/**/MEMORY.md",
     "cordis.patch.yml",
     "README.md",

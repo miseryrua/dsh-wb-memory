@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import {
   extractReceipts, stripReceipts, restoreReceipts, checkReceiptsPreserved,
   extractAnchors, splitTopics, checkAnchorFidelity, boldTitleRetention,
-  ANCHOR_MIN_RETENTION, ANCHOR_MAX_LOST_TOPICS,
+  ANCHOR_MIN_RETENTION, ANCHOR_MAX_LOST_TOPICS, ANCHOR_TOPIC_MIN_RETENTION, ANCHOR_TOPIC_RATIO_MIN_OWN,
 } from '../lib/compact-fidelity.js'
 import { compactStatus } from '../lib/compact-status.js'
 import { readMemoryEntries } from '../lib/retrieve.js'
@@ -91,13 +91,13 @@ try {
     const lossy = big.split('\n').filter(l => !(/mod7\/core|cfgKey7Timeout|task7 |7\.2\.0/.test(l))).join('\n')
     const r = checkAnchorFidelity(big, lossy)
     assert.ok(r.retention >= ANCHOR_MIN_RETENTION, '全局保留率仍达标：' + r.retention)
-    assert.equal(r.lostEntries, 1); assert.ok(r.lostTopics >= 1, '条目内的粗体小节随条目一并计为丢失'); assert.equal(r.ok, false)
+    assert.equal(r.lostTopics, 1, '第 7 条的锚点都在其粗体小节里，小节叶子丢失'); assert.equal(r.lostSections, 1); assert.equal(r.ok, false)
   })
   await test('锚点：条目内粗体小节的锚点全消失 → 小节主题丢失 → 拒收', () => {
     const body = (n, extra) => '## 总条目\n导言文字。\n' + Array.from({ length: n }, (_, i) => '**小节' + i + '** 说明 ' + '`cmd_' + i + '_x` 与 src/s' + i + '/a.js。\n').join('') + '尾部 `keep_this`。\n'
     const orig = body(20), cand = orig.split('\n').filter(l => !/^\*\*小节5\*\*/.test(l)).join('\n')
     const r = checkAnchorFidelity(orig, cand)
-    assert.ok(r.retention >= ANCHOR_MIN_RETENTION); assert.equal(r.lostSections, 1); assert.equal(r.lostEntries, 0); assert.equal(r.ok, false)
+    assert.ok(r.retention >= ANCHOR_MIN_RETENTION); assert.equal(r.lostSections, 1); assert.equal(r.lostLeads, 0); assert.equal(r.ok, false)
     assert.equal(splitTopics(orig).filter(t => t.kind === 'section').length, 20)
   })
   await test('锚点：合法合并（两条合一条，锚点都在）→ 通过', () => {
@@ -110,6 +110,64 @@ try {
   await test('锚点：原文没有任何锚点 → 空通过；常量口径', () => {
     const r = checkAnchorFidelity('## 纯散文\n没有硬信息。\n', '## 合并\n更短。\n'); assert.equal(r.ok, true); assert.equal(r.total, 0)
     assert.equal(ANCHOR_MIN_RETENTION, 0.85); assert.equal(ANCHOR_MAX_LOST_TOPICS, 0)
+    assert.equal(ANCHOR_TOPIC_MIN_RETENTION, 0.5); assert.equal(ANCHOR_TOPIC_RATIO_MIN_OWN, 3)
+  })
+
+  // ---- 迭代 D4：主题（叶子）判定。探针场景的合成复刻：全局保留率仍高，但一个主题的事实没了 ----
+  // 约束条目：无粗体小节，标题 + 两行含硬锚点的约束正文。
+  const guardEntry = i =>
+    '<!-- tags: 约束' + i + ' / date: 2026-01-01 / importance: high -->\n## 约束条目' + i + '\n' +
+    '约束：`npm run guard' + i + ' --strict` 须在 lib/g' + i + '/guard.js 之后；配置键 guardKey' + i + 'Mode 默认 ' + i + '.4.1。\n' +
+    '限定：仅 `git tag v' + i + '.0.1` 之后可用，规则放在 src/g' + i + '/rules.json。\n\n'
+  const guardLib = n => '# 约束库\n\n' + Array.from({ length: n }, (_, i) => guardEntry(i)).join('')
+  await test('D4 锚点：整段约束（标题+约束正文）被删，全局保留率仍高 → 主题丢失 → 拒收（探针第 2 类）', () => {
+    const orig = guardLib(30)
+    const cand = orig.replace(guardEntry(11), '')
+    assert.equal(count(cand), 29)
+    const r = checkAnchorFidelity(orig, cand)
+    assert.ok(r.retention >= 0.95, '全局保留率仍很高：' + r.retention)
+    assert.equal(r.lostLeads, 1); assert.equal(r.lostTopics, 1); assert.equal(r.ok, false)
+    // 标题保留、正文约束删光：同样拒收
+    const headOnly = orig.replace(guardEntry(11), '<!-- tags: 约束11 / date: 2026-01-01 / importance: high -->\n## 约束条目11\n\n')
+    const r2 = checkAnchorFidelity(orig, headOnly); assert.equal(r2.ok, false); assert.equal(r2.lostTopics, 1)
+  })
+
+  // 大条目：一个 ## 标题 + 导言块（含 6 个锚点的主题段）+ 10 个粗体小节。
+  const bigEntry = (withLead = true) =>
+    '<!-- tags: 大条目 / date: 2026-01-01 / importance: high -->\n## 大条目总览\n' +
+    (withLead ? '总述：入口 `node bin/main.js --serve` 位于 bin/app/main.js，键 mainPortValue 默认 8.1.0，提交 9ab3c4d5，命令 git stash pop。\n' : '') +
+    Array.from({ length: 10 }, (_, i) => '**分项' + i + '** 说明 `sub_cmd_' + i + '` 与 pkg/part' + i + '/impl.js 默认 ' + (i + 2) + '.5.0。\n').join('') + '\n'
+  await test('D4 锚点：大条目的主题段（导言）被删而其小节都在 → 叶子判定仍拒收（探针第 3 类；条目级判定会被小节稀释）', () => {
+    const orig = '# 库\n\n' + bigEntry(true) + guardLib(10).replace('# 约束库\n\n', '')
+    const cand = '# 库\n\n' + bigEntry(false).replace('## 大条目总览\n', '') + guardLib(10).replace('# 约束库\n\n', '')
+    const r = checkAnchorFidelity(orig, cand)
+    assert.ok(r.retention >= 0.9, '全局保留率仍高：' + r.retention)
+    assert.equal(r.lostLeads, 1); assert.equal(r.lostSections, 0); assert.equal(r.ok, false)
+    // 对照：小节也都在、导言只是改写缩短（锚点全在）→ 通过
+    const shortLead = orig.replace('总述：入口', '入口').replace('位于 bin/app/main.js，', 'bin/app/main.js ')
+    assert.equal(checkAnchorFidelity(orig, shortLead).ok, true)
+  })
+  await test('D4 锚点：主题内部分丢失——保留比例低于一半拒收；高于一半由全局阈值把关', () => {
+    const orig = guardLib(40)
+    const dropFacts = (cand, i, keep) => {
+      // 保留第 i 条的前 keep 个锚点：按行内的 3 个路径/键/命令片段依次抹除
+      const pieces = ['`npm run guard' + i + ' --strict`', 'lib/g' + i + '/guard.js', 'guardKey' + i + 'Mode', i + '.4.1', '`git tag v' + i + '.0.1`', 'src/g' + i + '/rules.json']
+      let c = cand
+      for (const p of pieces.slice(keep)) c = c.replace(p, '某某')
+      return c
+    }
+    const lowKeep = dropFacts(orig, 5, 2), highKeep = dropFacts(orig, 5, 4)
+    const rl = checkAnchorFidelity(orig, lowKeep); assert.equal(rl.lostTopics, 1, JSON.stringify(rl)); assert.equal(rl.ok, false)
+    const rh = checkAnchorFidelity(orig, highKeep); assert.equal(rh.lostTopics, 0, JSON.stringify(rh)); assert.equal(rh.ok, true)
+  })
+  await test('D4 锚点：合法合并（两个约束条目合成一条、锚点都在）与只缩短散文 → 通过', () => {
+    const orig = guardLib(30)
+    const merged = orig.replace(guardEntry(4) + guardEntry(5), '<!-- tags: 约束合并 / date: 2026-01-01 / importance: high -->\n## 约束条目4与5\n' +
+      guardEntry(4).split('\n').slice(2).join('\n').trim() + '\n' + guardEntry(5).split('\n').slice(2).join('\n').trim() + '\n\n')
+    assert.equal(count(merged), 29)
+    const r = checkAnchorFidelity(orig, merged); assert.equal(r.ok, true, JSON.stringify(r)); assert.equal(r.lostTopics, 0)
+    const prose = orig.replace(/约束：/g, '').replace(/限定：/g, '').replace(/须在/g, '后于').replace(/默认/g, '=')
+    assert.equal(checkAnchorFidelity(orig, prose).ok, true)
   })
   await test('粗体小节标题保留数（信息项，不参与硬校验）', () => {
     const t = boldTitleRetention('## a\n**甲方案** x\n**乙方案：** y\n', '## a\n甲方案 x\n')

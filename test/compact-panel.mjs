@@ -267,7 +267,7 @@ for(const [name,compact] of [['成功',{lastOk:true}],['失败',{lastOk:false}],
   window.confirm=()=>false;await button.props.onClick();ok(posts.length===0,'取消确认零POST')
   let confirmation='';window.confirm=t=>{confirmation=t;return true};await button.props.onClick();ok(posts.length===1 && posts[0].url==='/api/wb-memory/compact-manual','确认主动单工作区请求，断网不自动重发')
   const sent=JSON.parse(posts[0].opts.body);ok(sent.workspace===data.resolvedWorkspace && sent.expectedRevision==='a'.repeat(64) && sent.confirmed===true && Object.keys(sent).length===3,'绑定正文revision而非失败记录，不传预算/路径/模型')
-  ok(confirmation.includes('不设插件输出 token 上限') && confirmation.includes('最多两次') && confirmation.includes('超时') && confirmation.includes('每日') && !confirmation.includes('额度已消费'),'确认框区分主动与自动日锁及上游限制')
+  ok(confirmation.includes('不设插件输出 token 上限') && confirmation.includes('最多四次') && confirmation.includes('超时') && confirmation.includes('每日') && !confirmation.includes('额度已消费'),'确认框区分主动与自动日锁及上游限制')
  }
 }
 {

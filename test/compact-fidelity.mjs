@@ -301,8 +301,9 @@ try {
     assert.ok(faithful.result.after > 12000); sameSet(receiptsOf(faithful.after), bigReceipts)
   })
 
-  await test('D2 分批：仅一批丢锚点 → 该批回退原文，另一批保留，回执不重复', async () => {
-    const r = await run(big, (input, c) => c.n === 1 ? dropLines(good(input), /cfgKey/) : good(input))
+  await test('D2 分批：仅一批持续丢锚点（E1 重试后仍不过）→ 该批回退原文，另一批保留，回执不重复', async () => {
+    const r = await run(big, (input, c) => /^## 条目0$/m.test(input) ? dropLines(good(input), /cfgKey/) : good(input))
+    assert.equal(r.calls.length, 3, '批1首轮+重试，批2一次')
     assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.result.fallbackBatches, 1); assert.equal(r.result.fallbackError, 'fidelity')
     assert.match(r.result.warnings, /1 批未整理/)
     sameSet(receiptsOf(r.after), bigReceipts); assert.equal(receiptsOf(r.after).length, 17)

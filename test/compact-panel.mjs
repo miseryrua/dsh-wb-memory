@@ -327,5 +327,21 @@ function byLabel(node,label) {
  ok(text.includes('不设插件上限（上游默认）'),'手动结果预算区别于未知旧记录');
  ok(text.includes('自动整理使用已配置') && text.includes('不回落提炼预算') && text.includes('不保证成功'),'面板明确自动预算和上游限制不变');
 }
+{
+ // 迭代 F2：自动整理暂停提示 + 手动整理入口
+ const ap={paused:true,count:2,after:2,lastDay:'2026-11-13',lastRatio:0.027,baselineChars:23465,releaseDelta:0.15}
+ const data={...manualData({lastOk:false,errorCode:'insufficient-progress'}),compactAutoPause:ap};let posts=[]
+ const state=await renderWithStatus(data,{interactive:true,post:(url,init)=>{posts.push({url,init});return Promise.resolve({ok:true,status:200,text:async()=>JSON.stringify({ok:true})})}})
+ const node=await openAutomation(state),text=treeText(node)
+ ok(text.includes('自动整理已暂停：连续 2 次进展不足（最近 2026-11-13，缩短 2.7%）'),'暂停提示含次数、最近日期与缩短比例')
+ ok(text.includes('15%') && text.includes('阈值'),'提示解除方式（库变化≥15%/降到阈值内）')
+ const btn=byLabel(node,'立即手动整理（解除自动整理暂停）')
+ ok(Boolean(btn) && !btn.props.disabled,'暂停时提供立即手动整理入口')
+ if(btn){window.confirm=()=>true;await btn.props.onClick();ok(posts.length===1 && posts[0].url==='/api/wb-memory/compact-manual' && JSON.parse(posts[0].init.body).confirmed===true,'入口复用手动整理接口')}
+ for(const [name,v] of [['paused=false',{...ap,paused:false}],['null',null],['缺字段',undefined]]){
+  const st=await renderWithStatus({...manualData({lastOk:false}),compactAutoPause:v},{interactive:true});const n=await openAutomation(st)
+  ok(!treeText(n).includes('自动整理已暂停') && !byLabel(n,'立即手动整理（解除自动整理暂停）'),'不暂停时不显示提示：'+name)
+ }
+}
 console.log('compact-panel: ' + passed + ' passed / ' + failed + ' failed')
 if (failed > 0) process.exit(1)

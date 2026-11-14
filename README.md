@@ -10,6 +10,18 @@
 
 [安装](#快速开始) · [记忆流水线](#自动化流水线) · [配置](#配置项) · [诊断](#状态与诊断) · [版本记录](#版本记录) · [测试](#开发与验收)
 
+## 迭代 F（未发版，版本号仍为 0.14.0-rc.3）：超阈值整理收敛、连续进展不足自动停手
+
+针对真实验收中「27137 → 23465 字符，只缩 13.5%，每个逻辑日重复空转」的问题。三项改动：
+
+- **F1 单批路径与批路径共用进展判定**：新增 `compactProgressOk(before, after, threshold)`（`lib/compact-plan.js`）。结果 ≤ 阈值，或比原文缩短 ≥ `COMPACT_MIN_PROGRESS`（10%），才可接受；否则以 `insufficient-progress` 拒收，原文不变，拒收候选照常留存。单批的第二轮此前只要「更短」就带警告接受，现在与批路径一致。
+- **F3 目标长度以阈值为准**：目标 = `floor(阈值×0.8)`，不再取输入长度的一半，且不超过输入长度（例：23465 字符、阈值 20000 → 16000）。输入已短于 0.8×阈值时目标即输入长度。自适应分支（按上次 after/target 的超幅反推）下限为 `floor(阈值×0.5)`（无输入长度时 0.3），上限为上述目标。
+- **F2 连续进展不足后停手**：自动整理连续 2 次 `insufficient-progress` 后，状态写入 `distilled.json` 的 `<工作区>.__compact__.autoPause`（`since/count/lastAt/lastDay/lastInputChars/lastAfterChars/lastRatio/baselineChars`），之后的自动巡检不再调用模型，仅记录跳过日。
+  - **计数口径**：只计 `insufficient-progress`。保真/校验失败与超时、截断等模型错误多为瞬时或输出质量问题，与「库压不动」无关，既不计数也不清零；成功写回清零；写入冲突不改状态。
+  - **解除**：① 手动整理（`force`）开始即清除，其自身失败不计数；② 当前字符数相对 `baselineChars` 变化 ≥ 15%（增减皆可）；③ 库降到阈值以内。「重试失败」入口按自动口径继续计数，但不受停手拦截。
+  - **面板与接口**：`/api/wb-memory/status` 新增 `compactAutoPause`（只含数字与日期；库已变化时 `paused=false`）。面板显示「自动整理已暂停：连续 N 次进展不足（最近 YYYY-MM-DD，缩短 x%）」、解除方式，以及复用手动整理接口的「立即手动整理」按钮。
+- 保真硬条件（提炼回执逐字、锚点全保留）、手动整理的既有行为与注入代码均未改动。新增 `test/compact-autopause.mjs`（13 项），`compact-selfheal`、`compact-panel` 同步更新。
+
 ## 0.14.0-rc.3：批级保真反馈重试、拒收候选留存、批级诊断（候选版，未经真实验收）
 
 - 背景：rc.2 的两次真实验收均以 `insufficient-progress` 被拒收（库完好，保真检查全过）：模型一旦真的压缩就会丢硬信息，分批路径保真不过时没有重试，直接退回原文，且被拒收的输出不留存。rc.3 针对这一点加入以下三项。
@@ -321,7 +333,7 @@
 ```bash
 node --check lib/index.js
 node --check lib/client.js
-npm test                       # 三十六个隔离套件，假模型，无真实LLM调用
+npm test                       # 三十九个隔离套件，假模型，无真实LLM调用
 node test/perf-v010.mjs         # 可选：合成集检索性能对照
 ```
 

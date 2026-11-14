@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { migrateMemory, preservesLifecycle } from '../lib/memory-lifecycle.js'
 import { compactStatus } from '../lib/compact-status.js'
-import { COMPACT_MIN_PROGRESS, COMPACT_BATCH_TARGET_MIN_RATIO, planCompactBatches, compactMadeProgress, compactEntryGrowthLimit } from '../lib/compact-plan.js'
+import { COMPACT_MIN_PROGRESS, COMPACT_BATCH_TARGET_MIN_RATIO, planCompactBatches, compactMadeProgress, compactProgressOk, compactEntryGrowthLimit } from '../lib/compact-plan.js'
 const root = mkdtempSync(join(tmpdir(), 'wb-compact-selfheal-'))
 let passed = 0
 const test = async (name, fn) => { await fn(); passed++; console.log('PASS ' + name) }
@@ -116,12 +116,27 @@ try {
     assert.equal(compactTargetChars(12000, { ok: false, errorCode: 'llm-truncated', target: 9600, after: 12000 }), 9600)
     // 例外：模型无视目标（无实质进展）仍可反推
     assert.equal(compactTargetChars(12000, { ok: false, errorCode: 'insufficient-progress', target: 9600, after: 12745 }), 8586)
-    // 成功但带警告的超幅记录：反推结果受输入比例下限保护（旧实现会塌到 3600）
+    // 成功但带警告的超幅记录：不传输入长度时仍按旧语义反推；传入后（生产路径）目标以阈值为准，不再自适应下调（迭代 F3）
     const accepted = { ok: true, target: 3600, after: 16381 }
     assert.equal(compactTargetChars(12000, accepted), 3600)
-    assert.equal(compactTargetChars(12000, accepted, 16381), 8191)
-    assert.equal(compactTargetChars(12000, accepted, 40000), 9600, '下限不超过兜底 0.8×阈值')
+    assert.equal(compactTargetChars(12000, accepted, 16381), 6000, 'F3：自适应下限 0.5×阈值（旧值取输入一半 8191）')
+    assert.equal(compactTargetChars(12000, accepted, 40000), 6000, 'F3：自适应下限 0.5×阈值')
+    assert.equal(compactTargetChars(12000, { target: 9600, after: 12745 }, 16381), 8586, '温和超幅仍可自适应')
     assert.equal(compactTargetChars(12000, null, 23454), 9600)
+  })
+
+  await test('③a2 F3 目标计算：23465/阈值20000 → 16000；输入短于 0.8×阈值；自适应下限与上限', () => {
+    assert.equal(compactTargetChars(20000, null, 23465), 16000, '真实整理量级：以阈值 0.8 为准，不取输入一半')
+    assert.equal(compactTargetChars(20000, { ok: false, errorCode: 'validation', target: 11733, after: 22827 }, 23465), 16000, '失败记录不影响')
+    assert.equal(compactTargetChars(20000, null, 15000), 15000, '输入短于 0.8×阈值：目标不超过输入')
+    assert.equal(compactTargetChars(20000, null, 16000), 16000, '边界：输入恰为 0.8×阈值')
+    assert.equal(compactTargetChars(20000, null, 16001), 16000)
+    // 自适应：after/target 超幅 1.95×（11733→22827）→ floor(20000/1.95×0.95)=9743 → 抬到下限 0.5×阈值=10000
+    assert.equal(compactTargetChars(20000, { target: 11733, after: 22827 }, 23465), 10000)
+    assert.equal(compactTargetChars(20000, { target: 16000, after: 22827 }, 23465), 13317, '16000→22827 超幅 1.43× → 13317')
+    assert.ok(compactTargetChars(20000, { target: 16000, after: 22827 }, 23465) <= 16000)
+    assert.ok(compactTargetChars(20000, { target: 16000, after: 12000 }, 23465) <= 16000, '输出未超目标时不超过上限')
+    assert.ok(compactTargetChars(20000, { target: 1, after: 1 }, 1e9) <= 20000)
   })
 
   await test('③b 分批目标：每批不低于该批输入的 COMPACT_BATCH_TARGET_MIN_RATIO', () => {
@@ -143,7 +158,7 @@ try {
       const res = await compactMemoryIfOver(makeLlm({ cap: 1.7, calls }), cfg, dc, 'multi', dir, markers)
       if (res === null) break
       assert.equal(res.ok, true, '第 ' + (day + 1) + ' 天应接受：' + JSON.stringify(res))
-      assert.ok(res.target >= 6900, '第 ' + (day + 1) + ' 天目标 ' + res.target + ' 不得塌向 3600 下限')
+      assert.ok(res.target >= 6000, '第 ' + (day + 1) + ' 天目标 ' + res.target + ' 不得塌向 3600 下限（F3 下限 0.5×阈值）')
       assert.ok(res.target !== 3600)
       assert.ok(res.after < size, '逐日变短')
       assert.equal(res.newCount, 34)
@@ -262,11 +277,31 @@ try {
     assert.equal(r.calls.length, 1); assert.equal(r.result.rounds, 1); assert.equal(r.result.ok, true); assert.equal(r.result.warnings, undefined); assert.equal(r.result.batches, 1)
   })
 
-  await test('⑤ 单批路径不变：第二轮仍超阈值但更短（哪怕只短2%）→ 带警告接受；无进展要求', async () => {
+  await test('⑤ F1 单批第二轮：仍超阈值且只短约2% → insufficient-progress 拒收、原文不变、留存候选', async () => {
     const raw = mk(12, 400)
     const r = await run({ raw, ratio: 0.98, config: { memoryCharThreshold: 2000, compactMaxTokens: 8000 } })
-    assert.equal(r.calls.length, 2); assert.equal(r.result.rounds, 2); assert.equal(r.result.ok, true); assert.match(r.result.warnings, /^仍超阈值 \d+ 字符$/)
-    assert.ok(r.result.after > raw.length * 0.9)
+    assert.equal(r.calls.length, 2); assert.equal(r.result.rounds, 2); assert.equal(r.result.ok, false)
+    assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(r.result.stage, 'validation')
+    assert.equal(readFileSync(r.path, 'utf8'), raw)
+    assert.ok(r.result.rejectionRetained, '拒收候选留存，字段同分批路径')
+    const rec = Object.values(r.markers)[0]['__compact__']
+    assert.equal(rec.errorCode, 'insufficient-progress')
+  })
+
+  await test('⑤ F1 单批第二轮：仍超阈值但缩短 ≥10% → 带警告接受（与分批路径同口径）', async () => {
+    const raw = mk(12, 400)
+    const r = await run({ raw, ratio: 0.85, config: { memoryCharThreshold: 2000, compactMaxTokens: 8000 } })
+    assert.equal(r.result.ok, true); assert.equal(r.result.rounds, 2); assert.match(r.result.warnings, /^仍超阈值 \d+ 字符$/)
+    assert.ok(r.result.after <= raw.length * 0.9)
+  })
+
+  await test('⑤ F1 共用判定：compactProgressOk 边界与分批/单批一致', () => {
+    assert.equal(compactProgressOk(1000, 500, 600), true, '≤阈值直接通过')
+    assert.equal(compactProgressOk(1000, 950, 600), false, '超阈值且只短5%')
+    assert.equal(compactProgressOk(1000, 900, 600), true, '恰好缩10%')
+    assert.equal(compactProgressOk(1000, 901, 600), false)
+    assert.equal(compactProgressOk(0, 0, 0), true, 'after<=threshold 时与 before 无关')
+    assert.equal(compactProgressOk(1000, NaN, 600), false)
   })
 
   await test('⑤ 单批路径不变：第二轮不比原文短 → 拒收', async () => {

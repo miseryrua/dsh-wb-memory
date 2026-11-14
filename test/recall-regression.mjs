@@ -161,7 +161,9 @@ export async function runRegression(opts = {}) {
   const sessionOf = (sid) => { if (!sessions.has(sid)) sessions.set(sid, makeSession(sid, WORKSPACE_DIR)); return sessions.get(sid) }
   const agentOf = (sid) => ({ session: sessionOf(sid) })
   const claim = (sid, message, turn) => host.emit('agent/inbox/claimed', { agent: agentOf(sid), message, turn })
-  const assembleText = (sid) => textFn(assembleContextFor(agentOf(sid), undefined))   // 宿主 :907
+  // 本套件验证"逐轮按任务召回"逻辑本身；注入块按会话冻结（lib/inject-cache.js，见 test/inject-cache.mjs）
+  // 会让同会话第二次组装返回缓存，故每次组装前先解冻该会话。上游原版入口无此导出，用可选链兼容。
+  const assembleText = (sid) => { mod.injectCacheForTest?.delete(sid); return textFn(assembleContextFor(agentOf(sid), undefined)) }   // 宿主 :907
   const has = (block, s) => (block || '').includes(s)
   const titles = (block) => ((block || '').match(/^#### (.+)$/gm) || []).map((l) => l.slice(5))
   const tt = (block) => titles(block).join('/')

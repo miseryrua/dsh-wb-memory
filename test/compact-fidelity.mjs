@@ -280,12 +280,14 @@ try {
     assert.equal(st.lastOk, false); assert.ok(st.failedChecks.includes('anchorsPreserved')); assert.equal(st.errorCode, 'fidelity'); assert.match(st.errorMessage, /关键事实|锚点/)
   })
 
-  await test('D3 单批第二轮降级接受：仍超阈值但保真全过 → 带警告接受，回执齐全', async () => {
+  await test('D3 单批第二轮：仍超阈值、保真全过但缩短不足 10% → 按进展不足拒收（迭代 F1），原文不变', async () => {
+    // 迭代 F1 前此处「更短即带警告接受」；现单批第二轮与批路径同口径。small 仅略超阈值，缩短 ≥10% 必然进阈值，
+    // 故「仍超阈值且已缩短 ≥10%」的带警告接受由 compact-selfheal（单批 ratio .85、阈值 2000）覆盖。
     const r = await run(small, input => good(input, 0.99))
     assert.equal(r.calls.length, 2, '首轮仍超阈值 → 触发重试')
-    assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.result.checks.underThreshold, false)
-    assert.match(r.result.warnings, /仍超阈值/); assert.ok(r.after.length > 12000 && r.after.length < small.length)
-    sameSet(receiptsOf(r.after), smallReceipts)
+    assert.equal(r.result.ok, false, JSON.stringify(r.result)); assert.equal(r.result.checks.underThreshold, false)
+    assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(r.after, small)
+    assert.equal(r.result.checks.receiptsPreserved, true); assert.equal(r.result.checks.anchorsPreserved, true)
   })
 
   await test('D3 单批第二轮：仍超阈值且丢锚点 → 不得降级接受', async () => {

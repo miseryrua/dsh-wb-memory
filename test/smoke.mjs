@@ -474,14 +474,14 @@ try {
   rmSync(d3, { recursive: true, force: true })
 }
 
-// 情形 4：第二轮条目数达标但超阈值 → 仍带警告接受（自愈路径不许被堵死）
+// 情形 4：第二轮条目数达标但超阈值 → 缩短 ≥10%（迭代 F1 进展门槛）时仍带警告接受（自愈路径不许被堵死）
 const d4 = mkdtempSync(join(tmpdir(), 'wbmem-c4-'))
 try {
   const mp4 = join(d4, 'MEMORY.md')
   writeFileSync(mp4, MEM_SRC, 'utf8')
   const mk4 = {}
   let call4 = 0
-  const MEM_NEW4 = ['# 项目长期记忆', '', '## 甲条目', '甲'.repeat(120), '', '## 乙条目', '乙'.repeat(120), ''].join('\n')
+  const MEM_NEW4 = ['# 项目长期记忆', '', '## 甲条目', '甲'.repeat(110), '', '## 乙条目', '乙'.repeat(110), ''].join('\n')
   ok(MEM_NEW4.length < MEM_SRC.length && MEM_NEW4.length > ccfg2.memoryCharThreshold, 'C4pre：测试构造满足「更短但超阈值」（' + MEM_NEW4.length + ' vs 原文 ' + MEM_SRC.length + '，阈值 ' + ccfg2.memoryCharThreshold + '）')
   const llm4 = {
     stream: async function* () {

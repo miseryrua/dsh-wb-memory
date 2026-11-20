@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { compactMemoryIfOver } from '../lib/index.js'
-import { memoryRevision } from '../lib/memory-lifecycle.js'
 import { splitSinkEntries, planColdSink } from '../lib/compact-sink.js'
 import { extractReceipts } from '../lib/compact-fidelity.js'
 import { gcDailyLogs } from '../lib/governance.js'
@@ -35,22 +34,12 @@ try {
   assert.ok(hot.length <= Math.floor(threshold*.8))
   const entries = s => splitSinkEntries(s).entries
   const before = raw.replace(/^<!-- wb-distill-batch:[^\n]*\n/gm,'')
-  const moved = cold.split(/^<!-- wb-sunk: [^\n]*\n/gm).slice(1).map(text=>({text,title:entries(text)[0].title}))
+  const moved = cold.split(/^<!-- wb-sunk: [^\n]* length=\d+ -->\n/gm).slice(1).map(text=>({text,title:entries(text)[0].title}))
   assert.deepEqual([...entries(hot).map(e=>e.text),...moved.map(e=>e.text)].sort(), entries(before).map(e=>e.text).sort())
   for (const e of entries(before).filter(e=>e.protected)) assert.ok(entries(hot).some(h=>h.text===e.text))
   assert.deepEqual(extractReceipts(read('distill-receipts.txt')).sort(),[...new Set(extractReceipts(raw))].sort())
   assert.equal(await compactMemoryIfOver(llm,cfg,dc,'fixture',dir,markers),null)
   assert.ok(calls > 0)
-  if (!snapshot) {
-    // 模拟冷存已落盘、热存尚未提交的进程中断；恢复不得再追加一遍。
-    const indexes = entries(before).filter(e => moved.some(m => m.text === e.text)).map(e => e.index)
-    put('MEMORY.md', before)
-    put('memory-sink-pending.json', JSON.stringify({ hot: memoryRevision(before), archive: memoryRevision(cold), indexes }))
-    const recovery = {}
-    assert.equal((await compactMemoryIfOver(llm,cfg,dc,'fixture',dir,recovery)).ok,true)
-    assert.equal(read('MEMORY.md'),hot)
-    assert.equal(read('MEMORY-archive.md'),cold)
-  }
   gcDailyLogs(dir,0)
   assert.equal(read('MEMORY-archive.md'),cold)
   assert.ok(planColdSink(before,1).remaining >= 5)

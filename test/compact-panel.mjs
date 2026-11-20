@@ -156,6 +156,12 @@ async function renderWithStatus(statusData, options = {}) {
   return options.interactive ? {node,render,flush} : node
 }
 
+function findNode(node, predicate) {
+  if (!node || typeof node !== 'object') return null
+  if (predicate(node)) return node
+  for (const child of node.children || []) { const match=findNode(child,predicate); if(match)return match }
+  return null
+}
 // ---------- 6. 场景测试 ----------
 const baseStatus = (compact) => ({
   runtimeRevision: 'test',
@@ -169,6 +175,29 @@ const baseStatus = (compact) => ({
   compact,
   trash: { count: 0 }, archive: { count: 1 },
 })
+
+{
+  const ui=await renderWithStatus({...baseStatus(null),cold:{count:2}}, {interactive:true})
+  const automation=findSection(ui.node,'自动化与治理')
+  const jump=findNode(automation,n=>n.type==='button' && treeText(n)==='前往记忆文件')
+  ok(Boolean(jump) && treeText(automation).includes('冷存共 2 条'), '04 保留冷存统计与跳转按钮')
+  jump.props.onClick()
+  const mounted=ui.render(), files=findSection(mounted,'记忆文件')
+  const panel=n=>typeof n.type==='function' && n.type.name==='ColdMemoryPanel'
+  const mount=findNode(files,panel)
+  ok(Boolean(mount) && !findNode(findSection(mounted,'自动化与治理'),panel), '冷存面板仅挂载于 03 记忆文件')
+  const calls=[]
+  globalThis.fetch=async url=>{calls.push(url);return {ok:true,text:async()=>JSON.stringify({entries:[]})}}
+  const fixture={__hooks:[]}, child=makeReact(fixture)
+  const source=src.slice(src.indexOf('  function coldEntriesView('),src.indexOf('  function compactStatusView('))
+  const renderCold=new Function('h','useState','useRef','useEffect','readJson',source+'; return ColdMemoryPanel')(child.createElement,child.useState,child.useRef,child.useEffect,r=>r.text().then(JSON.parse))
+  for(const workspace of ['工作区甲','工作区乙']) {
+    child.hooks.reset();renderCold({...mount.props,open:true,workspace,onChanged:()=>{}})
+    for(const effect of fixture.__effects.splice(0)) effect()
+    await new Promise(resolve=>setTimeout(resolve,0))
+  }
+  ok(calls.length===2 && calls[0].endsWith(encodeURIComponent('工作区甲')) && calls[1].endsWith(encodeURIComponent('工作区乙')), '冷存展开时切换工作区会重新请求')
+}
 
 // 场景 1：截断失败（新字段齐全）
 {

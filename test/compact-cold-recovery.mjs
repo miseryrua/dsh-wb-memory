@@ -13,7 +13,7 @@ const compact=(checkpoint=()=>{})=>compactMemoryIfOver(null,{memoryCharThreshold
 const reset=()=>{writeFileSync(file,original);writeFileSync(archive,ch);writeFileSync(join(root,'memory-transfer.json'),'{}');writeFileSync(join(root,'memory-sink-retained.json'),'[]')}
 function invariant(expected){
   const raw=readFileSync(archive,'utf8'); const list=[];let n=ch.length
-  while(n<raw.length){const m=/^<!-- wb-sunk: [^\n]* length=(\d+)(?: id=[a-f0-9-]+)? -->\n/.exec(raw.slice(n));assert.ok(m);n+=m[0].length;list.push(raw.slice(n,n+Number(m[1])));n+=Number(m[1])}
+  while(n<raw.length){const m=/^<!-- wb-sunk: [^\n]* length=(\d+)(?: id=[a-f0-9-]+)?(?: sha=[a-f0-9]{16})? -->\n/.exec(raw.slice(n));assert.ok(m);n+=m[0].length;list.push(raw.slice(n,n+Number(m[1])));n+=Number(m[1])}
   assert.deepEqual([...splitSinkEntries(text()).entries.map(e=>e.text),...list].sort(),splitSinkEntries(expected).entries.map(e=>e.text).sort())
 }
 try {
@@ -61,7 +61,7 @@ try {
   const beforeDismiss=text();coldWorkspace(root,{action:'dismiss-conflict',conflictId:view.conflicts[0].id});assert.equal(text(),beforeDismiss);assert.equal(coldWorkspace(root).conflicts.length,0);
   console.log('PASS 冲突条目隔离、无关移回与解除');
   reset();writeFileSync(archive,ch+block(a)+'外部普通文字\n');view=coldWorkspace(root);assert.equal(view.entries.length,1);assert.ok(view.warning);
-  assert.throws(()=>coldWorkspace(root,{id:view.entries[0].id,revision:view.revision}),/不可修改/);
+  assert.throws(()=>coldWorkspace(root,{id:view.entries[0].id,revision:'stale'}),/不可修改/);
   assert.ok(readFileSync(archive,'utf8').endsWith('外部普通文字\n'));
   console.log('PASS 冷存损坏仍返回部分列表');
   reset();const old=join(root,'memory-sink-pending.json');writeFileSync(old,'原样旧日志');coldWorkspace(root);assert.equal(text(),original);
@@ -72,9 +72,16 @@ try {
     const next=coldWorkspace(root);coldWorkspace(root,{id:next.entries[0].id,revision:next.revision});await compact();invariant(original);
   }
   console.log('PASS 多条下沉每次冷热写入断点均到达');
+  reset();await compact(p=>{if(p==='journal')throw Error('interrupt')});writeFileSync(archive,ch+block(first));coldWorkspace(root);invariant(original+first);console.log('PASS 下沉不认领外部同文副本');
+  reset();writeFileSync(archive,ch+block(a));let v=coldWorkspace(root);
+  assert.throws(()=>coldWorkspace(root,{id:v.entries[0].id,revision:v.revision},p=>{if(p==='journal')throw Error('interrupt')}),/interrupt/);
+  assert.throws(()=>coldWorkspace(root,{action:'dismiss-conflict',conflictId:'missing'}),e=>e.status===404);assert.equal(text(),original);
+  assert.throws(()=>coldWorkspace(root,{}),e=>e.status===400);assert.equal(text(),original);
+  writeFileSync(file,original+a);v=coldWorkspace(root);assert.equal(v.conflicts.length,1);assert.equal(text(),original+a);assert.equal(readFileSync(archive,'utf8'),ch+block(a));coldWorkspace(root,{action:'dismiss-conflict',conflictId:v.conflicts[0].id});console.log('PASS 移回不认领外部同文；无效请求不恢复');
+  reset();await compact();const saved=readFileSync(archive,'utf8');writeFileSync(archive,saved.replace('正文。','改文。'));assert.match(coldWorkspace(root).warning,/哈希不符/);console.log('PASS 等长冷存篡改触发哈希告警');
   reset();const r='<!-- wb-distill-batch:2026-11-20:'+'a'.repeat(64)+'\n-->\n';writeFileSync(file,original+r);
   assert.throws(()=>migrateDistillReceipts(root,()=>{throw Error('interrupt')}),/interrupt/);migrateDistillReceipts(root);
-  assert.equal(text(),original);assert.match(readFileSync(join(root,'distill-receipts.txt'),'utf8'),/wb-distill-batch/);
+  assert.equal(text(),original);const {extractReceipts}=await import('../lib/compact-fidelity.js');assert.deepEqual(extractReceipts(readFileSync(join(root,'distill-receipts.txt'),'utf8')).sort(),extractReceipts(r).sort());
   console.log('PASS 跨行回执中断后无丢失')
   reset();
   const { planLogChunk } = await import('../lib/distill-cursor.js')

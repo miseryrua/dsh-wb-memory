@@ -73,6 +73,13 @@ const require = (id) => {
 }
 const exports1 = factory(require)
 ok(typeof exports1.apply === 'function', 'factory 导出 apply')
+const coldView = new Function('h', src.slice(src.indexOf('  function coldEntriesView('), src.indexOf('  function ColdMemoryPanel(')) + '; return coldEntriesView')(react.createElement)
+let restored = null
+const coldTree = coldView({ entries: [{ id: 5, title: '冷存样例', date: '2026-01-01', importance: 'high', sunkDay: '2026-11-20', chars: 42 }] }, false, id => { restored = id })
+const coldRow = coldTree.children[0]
+ok(coldRow.children[0].includes('冷存样例 · 日期 2026-01-01 · 重要度 high · 下沉 2026-11-20 · 42 字符'), '冷存列表展示全部元数据')
+coldRow.children[1].props.onClick()
+ok(restored === 5 && coldRow.children[1].children[0] === '移回', '冷存移回按钮绑定对应条目')
 
 // ---------- 4. 渲染辅助 ----------
 // 收集整棵树的所有文本

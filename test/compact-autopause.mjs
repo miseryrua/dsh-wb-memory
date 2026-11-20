@@ -214,6 +214,17 @@ try {
     const s = (await request('/api/wb-memory/status?workspace=A', undefined, 'GET')).data
     assert.equal(s.compactAutoPause, null)
   })
+  await test('冷存坏尾不影响状态与热存搜索', async () => {
+    const archive=join(wsroot,'A','.workbuddy','memory','MEMORY-archive.md')
+    const block='## 冷存条目\n内容\n'
+    writeFileSync(archive,'# 冷存记忆\n<!-- wb-sunk: 2026-11-20 length='+block.length+' -->\n'+block+'外部文本\n')
+    const s=await request('/api/wb-memory/status?workspace=A',undefined,'GET')
+    assert.equal(s.status,200);assert.equal(s.data.cold.count,1);assert.ok(s.data.cold.error)
+    const cold=await request('/api/wb-memory/cold?workspace=A',undefined,'GET')
+    assert.equal(cold.status,200);assert.equal(cold.data.entries.length,1);assert.ok(cold.data.warning)
+    const search=await request('/api/wb-memory/search?workspace=A&q='+encodeURIComponent('条目1'),undefined,'GET')
+    assert.equal(search.status,200);assert.ok(search.data.results.some(e=>e.source==='长期'))
+  })
   console.log('compact-autopause: ' + passed + ' passed')
 } finally {
   delete globalThis.__wbMemoryLlm; delete globalThis.__wbMemoryCtx

@@ -34,7 +34,7 @@ try {
   assert.ok(hot.length <= Math.floor(threshold*.8))
   const entries = s => splitSinkEntries(s).entries
   const before = raw.replace(/^<!-- wb-distill-batch:[^\n]*\n/gm,'')
-  const moved = cold.split(/^<!-- wb-sunk: [^\n]* length=\d+ -->\n/gm).slice(1).map(text=>({text,title:entries(text)[0].title}))
+  const moved = cold.split(/^<!-- wb-sunk: [^\n]* length=\d+(?: id=[a-f0-9-]+)? -->\n/gm).slice(1).map(text=>({text,title:entries(text)[0].title}))
   assert.deepEqual([...entries(hot).map(e=>e.text),...moved.map(e=>e.text)].sort(), entries(before).map(e=>e.text).sort())
   for (const e of entries(before).filter(e=>e.protected)) assert.ok(entries(hot).some(h=>h.text===e.text))
   assert.deepEqual(extractReceipts(read('distill-receipts.txt')).sort(),[...new Set(extractReceipts(raw))].sort())

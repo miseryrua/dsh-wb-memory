@@ -13,7 +13,7 @@ const compact=(checkpoint=()=>{})=>compactMemoryIfOver(null,{memoryCharThreshold
 const reset=()=>{writeFileSync(file,original);writeFileSync(archive,ch);writeFileSync(join(root,'memory-transfer.json'),'{}');writeFileSync(join(root,'memory-sink-retained.json'),'[]')}
 function invariant(expected){
   const raw=readFileSync(archive,'utf8'); const list=[];let n=ch.length
-  while(n<raw.length){const m=/^<!-- wb-sunk: [^\n]* length=(\d+) -->\n/.exec(raw.slice(n));assert.ok(m);n+=m[0].length;list.push(raw.slice(n,n+Number(m[1])));n+=Number(m[1])}
+  while(n<raw.length){const m=/^<!-- wb-sunk: [^\n]* length=(\d+)(?: id=[a-f0-9-]+)? -->\n/.exec(raw.slice(n));assert.ok(m);n+=m[0].length;list.push(raw.slice(n,n+Number(m[1])));n+=Number(m[1])}
   assert.deepEqual([...splitSinkEntries(text()).entries.map(e=>e.text),...list].sort(),splitSinkEntries(expected).entries.map(e=>e.text).sort())
 }
 try {
@@ -23,11 +23,11 @@ try {
     const req={revision:list.revision,id:list.entries[0].id};coldWorkspace(root,req);assert.ok(coldWorkspace(root,req).alreadyRestored);
     await compact();invariant(original+extra);console.log('PASS 下沉中断、热存外部追加、直接移回：'+phase)
   }
-  for(const phase of ['journal','hot','cold','retained','cleared']){
+  for(const phase of ['journal','hot','cold','retained','completed','cleared']){
     reset();await compact();const list=coldWorkspace(root);const req={revision:list.revision,id:list.entries[0].id};
     assert.throws(()=>coldWorkspace(root,req,p=>{if(p===phase)throw Error('interrupt')}),/interrupt/);
     writeFileSync(file,text()+extra);assert.ok(coldWorkspace(root,req).alreadyRestored);await compact();invariant(original+extra);
-    assert.ok(JSON.parse(readFileSync(join(root,'memory-sink-retained.json'),'utf8')).includes(req.id));console.log('PASS 移回中断及保留名单：'+phase)
+    assert.ok(JSON.parse(readFileSync(join(root,'memory-sink-retained.json'),'utf8')).includes((await import('../lib/compact-sink.js')).sinkKey(splitSinkEntries(text()).entries.find(e=>e.title===list.entries[0].title).text)));console.log('PASS 移回中断及保留名单：'+phase)
   }
   reset();
   const coldExtra = '## 外部冷存\n外部内容\n';
@@ -37,6 +37,41 @@ try {
   assert.ok(wrote);assert.equal(readFileSync(archive,'utf8'),ch+coldExtraBlock);
   const latest=coldWorkspace(root);coldWorkspace(root,{id:latest.entries[0].id,revision:latest.revision});await compact();invariant(original+coldExtra);
   console.log('PASS 冷存提交前外部追加未被覆盖');
+  reset();
+  const first=splitSinkEntries(original).entries[0].text;
+  const block=(s,day='2026-01-01')=>'<!-- wb-sunk: '+day+' length='+s.length+' -->\n'+s;
+  writeFileSync(archive,ch+block(first));await compact();invariant(original+first);
+  assert.equal(coldWorkspace(root).entries.filter(e=>e.title==='条目0').length,2);
+  console.log('PASS 原有热冷重复保留两份');
+  reset();writeFileSync(file,original+first);await compact();invariant(original+first);
+  console.log('PASS 原有热热重复保留两份');
+  reset();const a='## A\n内容\n', b=a+'\n';
+  writeFileSync(archive,ch+block(a)+block(b)+block(a,'2026-01-02'));
+  let ids=coldWorkspace(root);assert.equal(new Set(ids.entries.map(e=>e.id)).size,3);
+  coldWorkspace(root,{revision:ids.revision,id:ids.entries[1].id});assert.ok(text().endsWith(b));
+  ids=coldWorkspace(root);coldWorkspace(root,{revision:ids.revision,id:ids.entries[1].id});
+  assert.equal(coldWorkspace(root).entries[0].sunkDay,'2026-01-01');
+  console.log('PASS 冷冷重复记录独立定位与移回');
+  reset();const unrelated='## B\n无关\n';writeFileSync(archive,ch+block(a)+block(unrelated));
+  let view=coldWorkspace(root);const request={id:view.entries[0].id,revision:view.revision};
+  assert.throws(()=>coldWorkspace(root,request,p=>{if(p==='hot')throw Error('interrupt')}),/interrupt/);
+  writeFileSync(file,text()+a);view=coldWorkspace(root);assert.equal(view.conflicts.length,1);
+  assert.throws(()=>coldWorkspace(root,request),/冲突/);
+  coldWorkspace(root,{id:view.entries[1].id,revision:view.revision});assert.ok(text().includes(unrelated));
+  const beforeDismiss=text();coldWorkspace(root,{action:'dismiss-conflict',conflictId:view.conflicts[0].id});assert.equal(text(),beforeDismiss);assert.equal(coldWorkspace(root).conflicts.length,0);
+  console.log('PASS 冲突条目隔离、无关移回与解除');
+  reset();writeFileSync(archive,ch+block(a)+'外部普通文字\n');view=coldWorkspace(root);assert.equal(view.entries.length,1);assert.ok(view.warning);
+  assert.throws(()=>coldWorkspace(root,{id:view.entries[0].id,revision:view.revision}),/不可修改/);
+  assert.ok(readFileSync(archive,'utf8').endsWith('外部普通文字\n'));
+  console.log('PASS 冷存损坏仍返回部分列表');
+  reset();const old=join(root,'memory-sink-pending.json');writeFileSync(old,'原样旧日志');coldWorkspace(root);assert.equal(text(),original);
+  const {readdirSync}=await import('node:fs');const ignored=readdirSync(root).find(n=>n.startsWith('memory-sink-pending.json.ignored-'));assert.ok(ignored);assert.equal(readFileSync(join(root,ignored),'utf8'),'原样旧日志');
+  console.log('PASS 旧事务只改名不执行');
+  for(const phase of ['hot','cold']) for(const nth of [1,2,3,4,5]) {
+    reset();let hits=0;await compact(p=>{if(p===phase&&++hits===nth)throw Error('interrupt')});assert.equal(hits,nth);
+    const next=coldWorkspace(root);coldWorkspace(root,{id:next.entries[0].id,revision:next.revision});await compact();invariant(original);
+  }
+  console.log('PASS 多条下沉每次冷热写入断点均到达');
   reset();const r='<!-- wb-distill-batch:2026-11-20:'+'a'.repeat(64)+'\n-->\n';writeFileSync(file,original+r);
   assert.throws(()=>migrateDistillReceipts(root,()=>{throw Error('interrupt')}),/interrupt/);migrateDistillReceipts(root);
   assert.equal(text(),original);assert.match(readFileSync(join(root,'distill-receipts.txt'),'utf8'),/wb-distill-batch/);

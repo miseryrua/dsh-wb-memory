@@ -26,7 +26,7 @@ for(const dynamicBudget of [true,false])for(const injectionMaxChars of [4000,120
  assert.equal(idx.buildMemoryBlock(cwd,context,c,r=>trace=r),plain)
  assert.equal(idx.buildMemoryBlock(cwd,context,c,()=>{throw Error('observer')}),plain)
  // 会话内冻结提示行（INJECT_FROZEN_HINT）是之后新增的，基线只比其余部分逐字不变。
- const hash=createHash('sha256').update(plain.replace(idx.INJECT_FROZEN_HINT+'\n','').replaceAll(sandbox,'<sandbox>').replaceAll(String.fromCharCode(92),'/')).digest('hex')
+ const hash=createHash('sha256').update(plain.replace(idx.INJECT_FROZEN_HINT+'\n','').replace('同时覆盖长期记忆、冷存条目与近期日志','同时覆盖长期记忆与近期日志').replaceAll(sandbox,'<sandbox>').replaceAll(String.fromCharCode(92),'/')).digest('hex')
  assert.equal(hash,expected[i],JSON.stringify({dynamicBudget,injectionMaxChars,query}))
  i++
 }

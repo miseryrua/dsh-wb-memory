@@ -260,7 +260,7 @@ test('主动检索仍能找到通用词命中的条目（宁多勿漏）', () =>
 })
 test('index.js 里 memory_search / 检索端点 / 预览之外没有给 searchMemory 传 scene', () => {
   const src = readFileSync(join(root, 'lib', 'index.js'), 'utf8')
-  const calls = [...src.matchAll(/searchMemory\(memMd, \{[^}]*\}\)/g)].map((m) => m[0])
+  const calls = [...src.matchAll(/searchMemory\([^\n]+, opts\)/g)].map((m) => m[0])
   assert.ok(calls.length >= 2)
   assert.ok(calls.every((c) => !/scene/.test(c)), calls.join(' | '))
   assert.equal([...src.matchAll(/scene: 'inject'/g)].length, 1, "只有注入拼装一处使用 scene:'inject'")

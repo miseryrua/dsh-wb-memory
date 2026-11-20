@@ -206,10 +206,11 @@ try {
     const result = await compactMemoryIfOver(makeLlm(transform, calls), cfg, dc, name, dir, markers)
     return { result, calls, path, dir, after: readFileSync(path, 'utf8'), markers, name }
   }
+  const stored = r => readFileSync(join(r.dir, 'distill-receipts.txt'), 'utf8')
   const sameSet = (a, b) => assert.deepEqual([...new Set(a)].sort(), [...new Set(b)].sort())
 
   const big = mk(34, 650, 2)   // 分批：约 30k 字符，17 条回执
-  const small = mk(20, 380, 3) // 单批：12k < 长度 ≤ 18k，7 条回执
+  const small = mk(20, 460, 3) // 单批：12k < 长度 ≤ 18k，7 条回执
   assert.ok(big.length > 18000, 'big=' + big.length); assert.ok(small.length > 12000 && small.length <= 18000, 'small=' + small.length)
   const bigReceipts = receiptsOf(big), smallReceipts = receiptsOf(small)
   assert.equal(bigReceipts.length, 17); assert.equal(smallReceipts.length, 7)
@@ -219,33 +220,29 @@ try {
     assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.calls.length, 2)
     for (const c of r.calls) assert.ok(!/wb-distill-batch/.test(c.input), '送模型的输入不得含回执')
     assert.equal(r.result.checks.receiptsPreserved, true); assert.equal(r.result.checks.anchorsPreserved, true)
-    sameSet(receiptsOf(r.after), bigReceipts); assert.equal(receiptsOf(r.after).length, 17)
-    assert.equal(checkReceiptsPreserved(big, r.after).ok, true); assert.equal(count(r.after), 34)
+    sameSet(receiptsOf(stored(r)), bigReceipts); assert.equal(receiptsOf(stored(r)).length, 17)
+    assert.equal(checkReceiptsPreserved(big, stored(r)).ok, true); assert.equal(count(r.after), 34)
   })
 
   await test('D1 分批：模型自己输出了回执（重复、篡改哈希）→ 以代码托管为准，集合不变', async () => {
     const r = await run(big, (input, c) => good(input) + '\n\n' + R(1) + '\n' + R(1) + '\n<!-- wb-distill-batch:2026-11-09:' + 'f'.repeat(64) + ' -->\n')
     assert.equal(r.result.ok, true, JSON.stringify(r.result))
-    sameSet(receiptsOf(r.after), bigReceipts); assert.equal(receiptsOf(r.after).length, 17)
+    sameSet(receiptsOf(stored(r)), bigReceipts); assert.equal(receiptsOf(stored(r)).length, 17)
   })
 
   await test('D1 回执位置：集中在文末；inspectMemory、条目计数、readMemoryEntries、注入瘦身、去重 includes 都照常', async () => {
     const r = await run(big, good)
-    const tailBlock = r.after.slice(r.after.lastIndexOf('\n\n') )
-    const lastEntryEnd = r.after.lastIndexOf('## 条目33')
-    const firstReceipt = r.after.indexOf('<!-- wb-distill-batch')
-    assert.ok(firstReceipt > lastEntryEnd, '回执全部在最后一条正文之后')
-    assert.ok(r.after.endsWith('-->\n'))
+    assert.equal(receiptsOf(r.after).length, 0)
     inspectMemory(r.after)
     assert.equal(readMemoryEntries(r.after).filter(e => e.title !== '（前言）').length, 34)
     assert.ok(!/wb-distill-batch/.test(stripInjectionNoise(r.after)), '注入瘦身剔除回执')
-    for (const rc of bigReceipts) assert.ok(r.after.includes(rc), 'distillWorkspaceDate 的 includes 去重仍命中：' + rc.slice(0, 30))
+    for (const rc of bigReceipts) assert.ok(stored(r).includes(rc), 'distillWorkspaceDate 的 includes 去重仍命中：' + rc.slice(0, 30))
   })
 
   await test('D1 分批：一批回退原文 → 回执不重复、不缺失', async () => {
     const r = await run(big, (input, c) => c.n === 1 ? input.split(/(?=<!-- tags)/).slice(0, 2).join('') : good(input))
     assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.result.fallbackBatches, 1)
-    sameSet(receiptsOf(r.after), bigReceipts); assert.equal(receiptsOf(r.after).length, 17)
+    sameSet(receiptsOf(stored(r)), bigReceipts); assert.equal(receiptsOf(stored(r)).length, 17)
     assert.match(r.result.warnings, /1 批未整理/)
   })
 
@@ -261,7 +258,7 @@ try {
     const r = await run(small, good)
     assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.calls.length, 1)
     for (const c of r.calls) assert.ok(!/wb-distill-batch/.test(c.input))
-    sameSet(receiptsOf(r.after), smallReceipts); assert.equal(receiptsOf(r.after).length, 7)
+    sameSet(receiptsOf(stored(r)), smallReceipts); assert.equal(receiptsOf(stored(r)).length, 7)
   })
 
   await test('D2 单批：首轮丢配置键行 → 反馈含「事实锚点」→ 第二轮找回 → 接受，回执齐全', async () => {
@@ -269,13 +266,13 @@ try {
     assert.equal(r.calls.length, 2); assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.result.rounds, 2)
     assert.match(r.calls[1].full, /事实锚点/); assert.match(r.calls[1].full, /保留 \d+\/\d+/)
     assert.ok(!/wb-distill-batch/.test(r.calls[1].input) && !/wb-distill-batch/.test(r.calls[1].prev || ''), '重试轮输入也不含回执')
-    sameSet(receiptsOf(r.after), smallReceipts); assert.equal(r.result.checks.anchorsPreserved, true)
+    sameSet(receiptsOf(stored(r)), smallReceipts); assert.equal(r.result.checks.anchorsPreserved, true)
   })
 
   await test('D2 单批：两轮都丢锚点（压进阈值也不行）→ 拒收，原文逐字节不变，错误码 fidelity', async () => {
     const r = await run(small, input => dropLines(good(input), /cfgKey/))
     assert.equal(r.calls.length, 2); assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'fidelity')
-    assert.equal(r.result.checks.anchorsPreserved, false); assert.equal(r.after, small)
+    assert.equal(r.result.checks.anchorsPreserved, false); assert.equal(r.after, small.replace(/^<!-- wb-distill-batch:[^\n]*\n/gm, ''))
     const st = compactStatus(r.markers[r.name].__compact__)
     assert.equal(st.lastOk, false); assert.ok(st.failedChecks.includes('anchorsPreserved')); assert.equal(st.errorCode, 'fidelity'); assert.match(st.errorMessage, /关键事实|锚点/)
   })
@@ -285,22 +282,22 @@ try {
     // 故「仍超阈值且已缩短 ≥10%」的带警告接受由 compact-selfheal（单批 ratio .85、阈值 2000）覆盖。
     const r = await run(small, input => good(input, 0.99))
     assert.equal(r.calls.length, 2, '首轮仍超阈值 → 触发重试')
-    assert.equal(r.result.ok, false, JSON.stringify(r.result)); assert.equal(r.result.checks.underThreshold, false)
-    assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(r.after, small)
+    assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.result.checks.underThreshold, false)
+    assert.ok(r.result.sink.count > 0); assert.ok(r.after.length <= 9600)
     assert.equal(r.result.checks.receiptsPreserved, true); assert.equal(r.result.checks.anchorsPreserved, true)
   })
 
   await test('D3 单批第二轮：仍超阈值且丢锚点 → 不得降级接受', async () => {
     const r = await run(small, (input, c) => dropLines(good(input, 0.99), /cfgKey/))
-    assert.equal(r.result.ok, false); assert.equal(r.after, small); assert.equal(r.result.errorCode, 'fidelity')
+    assert.equal(r.result.ok, false); assert.equal(r.after, small.replace(/^<!-- wb-distill-batch:[^\n]*\n/gm, '')); assert.equal(r.result.errorCode, 'fidelity')
   })
 
   await test('D3 分批：仍超阈值但缩短≥10%、丢锚点 → 不被带警告接受；保真通过时仍按任务 A 接受', async () => {
     const lossy = await run(big, input => dropLines(good(input, 0.7), /cfgKey/))
-    assert.equal(lossy.result.ok, false, JSON.stringify(lossy.result)); assert.equal(lossy.after, big); assert.equal(lossy.result.errorCode, 'fidelity')
+    assert.equal(lossy.result.ok, false, JSON.stringify(lossy.result)); assert.equal(lossy.after, big.replace(/^<!-- wb-distill-batch:[^\n]*\n/gm, '')); assert.equal(lossy.result.errorCode, 'fidelity')
     const faithful = await run(big, input => good(input, 0.7))
     assert.equal(faithful.result.ok, true, JSON.stringify(faithful.result)); assert.match(faithful.result.warnings, /^仍超阈值 \d+ 字符$/)
-    assert.ok(faithful.result.after > 12000); sameSet(receiptsOf(faithful.after), bigReceipts)
+    assert.ok(faithful.result.after > 12000); sameSet(receiptsOf(stored(faithful)), bigReceipts)
   })
 
   await test('D2 分批：仅一批持续丢锚点（E1 重试后仍不过）→ 该批回退原文，另一批保留，回执不重复', async () => {
@@ -308,7 +305,7 @@ try {
     assert.equal(r.calls.length, 3, '批1首轮+重试，批2一次')
     assert.equal(r.result.ok, true, JSON.stringify(r.result)); assert.equal(r.result.fallbackBatches, 1); assert.equal(r.result.fallbackError, 'fidelity')
     assert.match(r.result.warnings, /1 批未整理/)
-    sameSet(receiptsOf(r.after), bigReceipts); assert.equal(receiptsOf(r.after).length, 17)
+    sameSet(receiptsOf(stored(r)), bigReceipts); assert.equal(receiptsOf(stored(r)).length, 17)
     assert.ok(r.result.checks.anchorsPreserved)
   })
 

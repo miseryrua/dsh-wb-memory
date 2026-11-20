@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 import { createHash } from 'node:crypto'
 import { nextAutoPause, autoPauseState, autoPauseView, COMPACT_AUTOPAUSE_AFTER, COMPACT_AUTOPAUSE_RELEASE_DELTA } from '../lib/compact-autopause.js'
+import { splitSinkEntries, sinkKey } from '../lib/compact-sink.js'
 import { compactProgressOk } from '../lib/compact-plan.js'
 const root = mkdtempSync(join(tmpdir(), 'wb-compact-autopause-'))
 let passed = 0
@@ -73,6 +74,7 @@ try {
   function ws(raw = single, config = small) {
     const name = 'w' + (++seq), dir = join(root, name); mkdirSync(dir)
     const path = join(dir, 'MEMORY.md'); writeFileSync(path, raw)
+    writeFileSync(join(dir, 'memory-sink-retained.json'), JSON.stringify([...splitSinkEntries(raw).entries, ...splitSinkEntries(mk(12, 420)).entries].map(e => sinkKey(e.text))))
     const markers = {}
     const st = { name, dir, path, markers, calls: [] }
     st.day = async ({ ratio = 0.98, truncate = false, opts = {}, cfg = config } = {}) => {
@@ -96,8 +98,8 @@ try {
     assert.equal(readFileSync(w.path, 'utf8'), single, '拒收：原文不变')
     const rec = JSON.stringify(w.markers[w.name].__compact__)
     r = await w.day()
-    assert.equal(r.newCalls, 0, '第 3 次零模型调用'); assert.equal(r.result.skipped, 'auto-paused'); assert.equal(r.result.ok, true)
-    assert.equal(r.result.count, 2); assert.ok(w.ap().skippedDay, '记录跳过日')
+    assert.equal(r.newCalls, 0, '第 3 次零模型调用'); assert.equal(r.result.sink.count, 0); assert.equal(r.result.ok, false)
+    assert.equal(w.ap().count, 2)
     assert.equal(readFileSync(w.path, 'utf8'), single)
     const after = w.markers[w.name].__compact__
     assert.equal(after.errorCode, 'insufficient-progress', '最近一次整理记录保留')
@@ -158,7 +160,7 @@ try {
     const w = ws(big, cfg)
     let r = await w.day({ ratio: 0.97 }); assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(w.ap().count, 1)
     r = await w.day({ ratio: 0.97 }); assert.equal(w.ap().count, 2)
-    r = await w.day({ ratio: 0.97 }); assert.equal(r.newCalls, 0); assert.equal(r.result.skipped, 'auto-paused')
+    r = await w.day({ ratio: 0.97 }); assert.equal(r.newCalls, 0); assert.equal(r.result.sink.count, 0)
   })
 
   await test('重试入口（priorCompact）：从上一记录取暂停状态，不受停手拦截，也能解除', async () => {

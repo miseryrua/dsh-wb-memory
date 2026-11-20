@@ -85,20 +85,15 @@ try {
     assert.equal(compactStatus(r.markers[r.name].__compact__).warnings, null)
   })
 
-  await test('② 进展不足（只短约2%）→ 拒收、原文不变、仍有备份', async () => {
+  await test('② 进展不足 → 拒收模型候选并下沉原文', async () => {
     const r = await run({ ratio: 0.97 })
-    const res = r.result
-    assert.equal(r.calls.length, 2); assert.equal(res.ok, false); assert.equal(res.errorCode, 'insufficient-progress'); assert.equal(res.stage, 'validation')
-    assert.ok(res.after > big.length * (1 - COMPACT_MIN_PROGRESS), '缩短不足 10%：' + res.after)
-    assert.equal(readFileSync(r.path, 'utf8'), big, '原文逐字节不变')
+    assert.equal(r.calls.length, 2)
+    assert.equal(r.result.ok, true)
+    assert.ok(r.result.sink.count > 0)
+    assert.ok(readFileSync(r.path, 'utf8').length <= 9600)
     assert.equal(readFileSync(join(r.dir, 'archive', 'MEMORY.bak-' + logicalDayStamp(cfg) + '.md'), 'utf8'), big)
-    assert.ok(r.markers[r.name].__compact__.day, '拒收仍记每日一次的日锁')
-    assert.equal(await compactMemoryIfOver(makeLlm({ ratio: 0.5, calls: [] }), cfg, dc, r.name, r.dir, r.markers), null, '同日不再自动尝试')
-    const st = compactStatus(r.markers[r.name].__compact__)
-    assert.equal(st.lastOk, false); assert.equal(st.errorCode, 'insufficient-progress'); assert.match(st.errorMessage, /缩短不足/)
-    assert.deepEqual(st.failedChecks, ['underThreshold'])
+    assert.equal(await compactMemoryIfOver(makeLlm({ ratio: 0.5, calls: [] }), cfg, dc, r.name, r.dir, r.markers), null)
   })
-
   await test('② 边界：compactMadeProgress 恰好 10% 通过、9.9% 不通过', () => {
     assert.equal(compactMadeProgress(1000, 900), true); assert.equal(compactMadeProgress(1000, 901), false)
     assert.equal(compactMadeProgress(0, 0), false); assert.equal(compactMadeProgress(1000, NaN), false)
@@ -238,7 +233,7 @@ try {
 
   await test('⑥ 逐批兜底④：部分成功但总进展 <10% → insufficient-progress 拒收、原文不变', async () => {
     const r = await run({ ratio: 0.97, fail: { 2: 'truncate' } })
-    assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(readFileSync(r.path, 'utf8'), big)
+    assert.equal(r.result.ok, true); assert.ok(r.result.sink.count > 0); assert.ok(readFileSync(r.path, 'utf8').length <= 9600)
   })
 
   await test('反馈文本：entryGrowthOk 分支含实际数字与由常量推导的上限；所有分支均无未展开占位符', () => {
@@ -282,7 +277,7 @@ try {
     const r = await run({ raw, ratio: 0.98, config: { memoryCharThreshold: 2000, compactMaxTokens: 8000 } })
     assert.equal(r.calls.length, 2); assert.equal(r.result.rounds, 2); assert.equal(r.result.ok, false)
     assert.equal(r.result.errorCode, 'insufficient-progress'); assert.equal(r.result.stage, 'validation')
-    assert.equal(readFileSync(r.path, 'utf8'), raw)
+    assert.equal(r.result.sink.count, 7, '最多移走七条，仍超阈值如实失败')
     assert.ok(r.result.rejectionRetained, '拒收候选留存，字段同分批路径')
     const rec = Object.values(r.markers)[0]['__compact__']
     assert.equal(rec.errorCode, 'insufficient-progress')

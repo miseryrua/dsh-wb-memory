@@ -177,7 +177,7 @@ try {
   mkdirSync(join(crash.pluginDir, 'distilled.json')) // 注入 rename 目标为目录的失败
   await boot(crash); await callDistill(crash)
   const committed = memRaw(crash)
-  A(committed?.includes('wb-distill-batch:'), '正文与批次回执同时落盘')
+  A(committed && !committed.includes('wb-distill-batch:') && readFileSync(join(crash.memDir, 'distill-receipts.txt'), 'utf8').includes('wb-distill-batch:'), '正文与批次回执独立落盘')
   A(dateMarker(crash, OLD_DATE) === undefined, '失败游标未推进')
   // 删除已验证的隔离插件路径内故障目录，不涉及真实插件。
   const broken = join(crash.pluginDir, 'distilled.json')

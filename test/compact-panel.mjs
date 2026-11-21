@@ -178,14 +178,20 @@ const baseStatus = (compact) => ({
 
 {
   const ui=await renderWithStatus({...baseStatus(null),cold:{count:2}}, {interactive:true})
-  const automation=findSection(ui.node,'自动化与治理')
-  const jump=findNode(automation,n=>n.type==='button' && treeText(n)==='前往记忆文件')
+  const nav=findNode(ui.node,n=>n.props?.['aria-label']==='记忆管理分区')
+  ok(nav.children.map(n=>n.props.key).join(',')==='overview,content,recall,distill,maintain,settings','六面板顺序正确')
+  for(const [label,id,items] of [['总览','overview',['需要关注','冷存条目','今日小结']],['记忆内容','content',['长期条目','冷存条目','文件']],['召回与检索','recall',['最近一次实际组装','手动预览','记忆检索工具','检索']],['提炼与整理','distill',['自动流水','会话小结','立即提炼','手动整理当前工作区一次']],['维护','maintain',['治理','回收站','备份']],['设置','settings',['逻辑日分界']]]) {
+    const panel=findSection(ui.node,label)
+    ok(panel.props.id==='wb-panel-'+id && items.every(item=>treeText(panel).includes(item)),label+' 保留指定控件')
+  }
+  const automation=findSection(ui.node,'提炼与整理')
+  const jump=findNode(automation,n=>n.type==='button' && treeText(n)==='查看冷存条目')
   ok(Boolean(jump) && treeText(automation).includes('冷存共 2 条'), '04 保留冷存统计与跳转按钮')
   jump.props.onClick()
-  const mounted=ui.render(), files=findSection(mounted,'记忆文件')
+  const mounted=ui.render(), files=findSection(mounted,'记忆内容')
   const panel=n=>typeof n.type==='function' && n.type.name==='ColdMemoryPanel'
   const mount=findNode(files,panel)
-  ok(Boolean(mount) && !findNode(findSection(mounted,'自动化与治理'),panel), '冷存面板仅挂载于 03 记忆文件')
+  ok(Boolean(mount) && !findNode(findSection(mounted,'提炼与整理'),panel), '冷存面板仅挂载于 02 记忆内容')
   const calls=[]
   globalThis.fetch=async url=>{calls.push(url);return {ok:true,text:async()=>JSON.stringify({entries:[]})}}
   const fixture={__hooks:[]}, child=makeReact(fixture)
@@ -287,8 +293,8 @@ const baseStatus = (compact) => ({
 }
 function manualButton(node) { return byLabel(node,'手动整理当前工作区一次') }
 async function openAutomation(state) {
- const nav=byLabel(state.node,'记忆管理分区');const button=nav.children.find(n=>treeText(n).includes('自动化与治理'))
- button.props.onClick();const node=state.render();ok(findSection(node,'自动化与治理')?.props.hidden===false,'用户导航确实打开自动化与治理，而非搜索隐藏树');return node
+ const nav=byLabel(state.node,'记忆管理分区');const button=nav.children.find(n=>treeText(n).includes('提炼与整理'))
+ button.props.onClick();const node=state.render();ok(findSection(node,'提炼与整理')?.props.hidden===false,'用户导航确实打开提炼与整理，而非搜索隐藏树');return node
 }
 const manualData=compact=>({...baseStatus(compact),compactManual:{expectedRevision:'a'.repeat(64),running:false}})
 for(const [name,compact] of [['成功',{lastOk:true}],['失败',{lastOk:false}],['无记录',null],['未知',{}]]){

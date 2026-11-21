@@ -116,7 +116,6 @@ async function renderWithStatus(statusData, options = {}) {
     register: (meta, comp) => comp,
   }
   globalThis.fetch = (url, init) => {
-    if(String(url).includes('/api/wb-memory/reasoning')) return Promise.resolve({ok:true,status:200,text:async()=>JSON.stringify(options.reasoning ? options.reasoning(String(url)) : {available:true,efforts:options.efforts || []})})
     if(init?.method === 'POST' && options.post) return options.post(url,init)
     if (String(url).includes('/api/wb-memory/status')) {
       return Promise.resolve({ ok: true, status: 200, statusText: 'OK', text: () => Promise.resolve(JSON.stringify(statusData)) })
@@ -302,9 +301,9 @@ for(const [name,compact] of [['成功',{lastOk:true}],['失败',{lastOk:false}],
  ok(Boolean(button) && !button.props.disabled,name+'状态入口常驻且不灰显')
 }
 {
- const data=manualData({lastOk:true});data.compactRetry={expectedAt:null,used:true};let posts=[]
+ const data=manualData({lastOk:true});let posts=[]
  const state=await renderWithStatus(data,{interactive:true,config:{autoDistill:false,autoCompact:false},post:(url,opts)=>{posts.push({url,opts});return Promise.reject(Error('network'))}})
- const button=manualButton(await openAutomation(state));ok(Boolean(button)&&!button.props.disabled,'自动功能关闭/旧每日重试已用仍可主动整理')
+ const button=manualButton(await openAutomation(state));ok(Boolean(button)&&!button.props.disabled,'自动功能关闭仍可主动整理')
  if(button){
   window.confirm=()=>false;await button.props.onClick();ok(posts.length===0,'取消确认零POST')
   let confirmation='';window.confirm=t=>{confirmation=t;return true};await button.props.onClick();ok(posts.length===1 && posts[0].url==='/api/wb-memory/compact-manual','确认主动单工作区请求，断网不自动重发')
@@ -326,42 +325,14 @@ function byLabel(node,label) {
  for(const c of (Array.isArray(node)?node:node.children || [])){const x=byLabel(c,label);if(x)return x}return null
 }
 {
- const state=await renderWithStatus(baseStatus(null),{interactive:true,config:{compactProvider:'fixture',compactModel:'m',compactReasoningEffort:'high'},efforts:[{id:'low',name:'Low'},{id:'high',name:'High'}]})
- const select=byLabel(state.node,'整理思考强度')
- ok(Boolean(select),'自动整理模型下有思考强度下拉框')
- ok(select?.props.value==='high','回显已保存的精确思考档位')
- ok(treeText(select).includes('Low') && !treeText(select).includes('Max'),'仅展示当前模型公告的档位')
-}
-{
- let sent;
- const s=await renderWithStatus(baseStatus(null),{interactive:true,config:{compactProvider:'fixture',compactModel:'m'},efforts:[{id:'low'}],post:async(url,init)=>{sent=JSON.parse(init.body);return {ok:true,status:200,text:async()=>JSON.stringify({ok:true,compactReasoningEffort:'low'})}}});
- await byLabel(s.node,'整理思考强度').props.onChange({target:{value:'low'}});
- ok(sent.compactReasoningEffort==='low' && byLabel(s.render(),'整理思考强度').props.value==='low','选择档位保存并回显，不调用生成');
-}
-{
- const s=await renderWithStatus(baseStatus(null),{interactive:true,config:{compactProvider:'fixture',compactModel:'m',compactReasoningEffort:'high'},efforts:[{id:'low'}],post:async()=>{throw Error('offline')}});
- await byLabel(s.node,'整理思考强度').props.onChange({target:{value:'low'}});
- ok(byLabel(s.render(),'整理思考强度').props.value==='high','保存失败保留原档位');
-}
-{
- const s=await renderWithStatus(baseStatus(null),{config:{compactProvider:'fixture',compactModel:'m'},efforts:[{id:'none',name:'关闭'},{id:'low'}]});
- ok(treeText(byLabel(s,'整理思考强度')).includes('关闭'),'模型明确公告关闭时才展示关闭');
-}
-{
- const s=await renderWithStatus(baseStatus(null),{interactive:true,config:{compactProvider:'fixture',compactModel:'m',compactReasoningEffort:'high'},reasoning:url=>({available:true,efforts:url.includes('model=second')?[{id:'max',name:'新档位'}]:[{id:'high',name:'旧档位'}]}),post:async()=>({ok:true,status:200,text:async()=>JSON.stringify({ok:true,compactReasoningEffort:'auto'})})});
- byLabel(s.node,'自动整理模型').props.onChange({target:{value:'fixture::second'}});
- const tree=await s.flush(),select=byLabel(tree,'整理思考强度');
- ok(select.props.value==='auto' && treeText(select).includes('新档位') && !treeText(select).includes('旧档位'),'切换模型重置策略并重新加载该模型档位');
-}
-{
- const tree=await renderWithStatus(baseStatus(null),{config:{compactProvider:'fixture',compactModel:'m',compactReasoningEffort:'high'},reasoning:()=>({available:false,efforts:[]})});
- const select=byLabel(tree,'整理思考强度');ok(select.props.disabled && select.props.value==='high','能力查询失败禁用但不清空已保存档位');
-}
-{
- const tree=await renderWithStatus(baseStatus(null),{config:{compactProvider:'fixture',compactModel:'m'},efforts:[{id:'low',name:'Low'}]});
+ // 0.14.2：思考强度不再可配，治理不再有开关；旧配置值不影响面板
+ const tree=await renderWithStatus(baseStatus(null),{config:{compactProvider:'fixture',compactModel:'m',compactReasoningEffort:'high',gcEnabled:false}});
  const text=treeText(tree);
- ok(text.includes('关闭思考（若支持）') && !text.includes('兼容旧策略'),'auto 显示新的关闭策略，不再显示旧语义');
- ok(text.includes('否则不传参数') && text.includes('不保证关闭'),'无关闭档位时明确说明默认回落不保证关闭');
+ ok(!byLabel(tree,'整理思考强度') && !text.includes('关闭思考（若支持）'),'思考强度下拉框已移除');
+ ok(text.includes('否则不传思考参数') && text.includes('不保证关闭'),'面板说明固定的思考策略');
+ const gc=findNode(tree,n=>n.type==='button' && n.children.length===1 && n.children[0]==='治理');
+ ok(Boolean(gc) && !gc.props.disabled,'旧配置 gcEnabled=false 不再禁用治理按钮');
+ ok(!text.includes('治理已关') && !text.includes('治理已开'),'不再显示治理开关状态');
 }
 {
  const tree=await renderWithStatus(baseStatus({lastOk:false,tokenBudget:'provider-default',maxTokens:null}));
@@ -411,7 +382,7 @@ function byLabel(node,label) {
  // 开关：全部为 role=switch，带可读名称
  const tree=ui.render(),switches=[];(function walk(n){if(!n||typeof n!=='object')return;if(n.props?.role==='switch')switches.push(n);for(const c of n.children||[])walk(c)})(tree)
  const names=switches.map(n=>n.props['aria-label']).sort().join(',')
- ok(names===['会话小结','治理','自动提炼（含超阈值整理）','自动流水','记忆总开关','记忆检索工具'].sort().join(','),'六个开关齐全且有名称：'+names)
+ ok(names===['会话小结','自动提炼（含超阈值整理）','自动流水','记忆总开关','记忆检索工具'].sort().join(','),'五个开关齐全且有名称：'+names)
  const text=treeText(tree)
  ok(!/auto-distill|auto-compact/.test(text),'说明文字不含内部用语 auto-distill / auto-compact')
 }
@@ -437,7 +408,8 @@ function byLabel(node,label) {
  // 按面板找控件：开关与关键控件在各自面板内
  const ui=await renderWithStatus({...baseStatus(null),cold:{count:2}},{interactive:true})
  const tree=ui.render(),has=(label,name)=>Boolean(findNode(findSection(tree,label),n=>n.props?.['aria-label']===name))
- for(const [label,name] of [['召回与检索','记忆检索工具'],['召回与检索','预览查询'],['提炼与整理','自动流水'],['提炼与整理','会话小结'],['提炼与整理','自动提炼（含超阈值整理）'],['提炼与整理','自动整理模型'],['提炼与整理','整理思考强度'],['提炼与整理','手动整理当前工作区一次'],['维护','治理'],['设置','记忆总开关']]) ok(has(label,name),label+' 面板内含控件：'+name)
+ for(const [label,name] of [['召回与检索','记忆检索工具'],['召回与检索','预览查询'],['提炼与整理','自动流水'],['提炼与整理','会话小结'],['提炼与整理','自动提炼（含超阈值整理）'],['提炼与整理','自动整理模型'],['提炼与整理','手动整理当前工作区一次'],['设置','记忆总开关']]) ok(has(label,name),label+' 面板内含控件：'+name)
+ ok(Boolean(findNode(findSection(tree,'维护'),n=>n.type==='button' && n.children.length===1 && n.children[0]==='治理')),'维护 面板内含治理按钮')
  ok(!treeText(findSection(tree,'维护')).includes('到文件列表查看'),'维护面板不再把回收站与备份导向文件列表')
 }
 console.log('compact-panel: ' + passed + ' passed / ' + failed + ' failed')

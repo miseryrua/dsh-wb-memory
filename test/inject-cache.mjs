@@ -48,7 +48,7 @@ const memA = join(wsA, '.workbuddy', 'memory')
 mkdirSync(join(plugin, 'lib'), { recursive: true }); mkdirSync(memA, { recursive: true }); mkdirSync(join(wsB, '.workbuddy', 'memory'), { recursive: true })
 for (const f of readdirSync(join(root, 'lib'))) if (f.endsWith('.js')) copyFileSync(join(root, 'lib', f), join(plugin, 'lib', f))
 copyFileSync(join(root, 'package.json'), join(plugin, 'package.json'))
-const cfg = { enabled: true, workspaceRoot: wsroot, activeProject: null, autoDigest: false, autoDistill: false, sessionSummary: false, memorySearchTool: false, memoryHeat: true, relevantTopK: 1 }
+const cfg = { enabled: true, workspaceRoot: wsroot, activeProject: null, autoDigest: false, autoDistill: false, sessionSummary: false, memorySearchTool: false, relevantTopK: 1 }
 const cfgFile = join(plugin, 'config.json')
 const setCfg = (patch) => writeFileSync(cfgFile, JSON.stringify({ ...cfg, ...patch }))
 setCfg({})

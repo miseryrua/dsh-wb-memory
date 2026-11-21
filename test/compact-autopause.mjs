@@ -163,23 +163,13 @@ try {
     r = await w.day({ ratio: 0.97 }); assert.equal(r.newCalls, 0); assert.equal(r.result.sink.count, 0)
   })
 
-  await test('重试入口（priorCompact）：从上一记录取暂停状态，不受停手拦截，也能解除', async () => {
-    const w = ws(); await w.day(); await w.day()
-    const prior = structuredClone(w.markers[w.name].__compact__)
-    const iso = { [w.name]: {} } // retryCompact 在隔离副本里删掉了 __compact__
-    const calls = []
-    const res = await compactMemoryIfOver(makeLlm(0.98, calls), small, dc, w.name, w.dir, iso, { priorCompact: prior })
-    assert.ok(calls.length >= 1, '用户主动重试不被停手拦截'); assert.equal(res.errorCode, 'insufficient-progress')
-    assert.equal(iso[w.name].__compact__.autoPause.count, 3, '按自动口径继续计数')
-  })
-
   // ---------- 路由：状态 API 与手动整理 ----------
   const hash = t => createHash('sha256').update(t).digest('hex')
   const proot = join(root, 'route'), wsroot = join(proot, 'ws'), rplugin = join(proot, 'plugin')
   mkdirSync(join(rplugin, 'lib'), { recursive: true })
   for (const f of readdirSync(new URL('../lib/', import.meta.url))) if (f.endsWith('.js')) copyFileSync(new URL('../lib/' + f, import.meta.url), join(rplugin, 'lib', f))
   writeFileSync(join(rplugin, 'package.json'), JSON.stringify({ type: 'module' }))
-  const cfg = { enabled: true, workspaceRoot: wsroot, activeProject: 'A', autoDistill: false, autoCompact: false, memoryCharThreshold: 12000, compactProvider: 'fixture', compactModel: 'fixture-model', compactMaxTokens: 8000, memoryHeat: false }
+  const cfg = { enabled: true, workspaceRoot: wsroot, activeProject: 'A', autoDistill: false, autoCompact: false, memoryCharThreshold: 12000, compactProvider: 'fixture', compactModel: 'fixture-model', compactMaxTokens: 8000 }
   writeFileSync(join(rplugin, 'config.json'), JSON.stringify(cfg))
   const raw = mk(20, 700), memPath = join(wsroot, 'A', '.workbuddy', 'memory', 'MEMORY.md')
   mkdirSync(join(wsroot, 'A', '.workbuddy', 'memory'), { recursive: true }); writeFileSync(memPath, raw)

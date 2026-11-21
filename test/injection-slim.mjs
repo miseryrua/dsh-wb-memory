@@ -106,7 +106,7 @@ const memDir = join(cwd, '.workbuddy', 'memory')
 mkdirSync(join(plugin, 'lib'), { recursive: true }); mkdirSync(memDir, { recursive: true })
 for (const f of readdirSync(join(root, 'lib'))) if (f.endsWith('.js')) copyFileSync(join(root, 'lib', f), join(plugin, 'lib', f))
 copyFileSync(join(root, 'package.json'), join(plugin, 'package.json'))
-const baseCfg = { enabled: true, workspaceRoot: wsroot, activeProject: 'A', autoDistill: false, sessionSummary: false, memoryHeat: false }
+const baseCfg = { enabled: true, workspaceRoot: wsroot, activeProject: 'A', autoDistill: false, sessionSummary: false }
 writeFileSync(join(plugin, 'config.json'), JSON.stringify(baseCfg))
 writeFileSync(join(plugin, 'USER.md'), '画像只供诊断。')
 const idx = await import(pathToFileURL(join(plugin, 'lib', 'index.js')))
@@ -170,7 +170,7 @@ test('命中带中段元数据注释的无关条目时，正文里也没有注�
   const rows = rankMemory(mdFull, QUERY, { k: 5, scene: 'inject', relRatio: 0, minContentIdf: 0 })
   const t = titlesOf(rows)
   assert.ok(t.includes('整理插件合并与安装路径'))
-  const { block } = assemble(mdFull, QUERY, { ...baseCfg, dynamicBudget: false, entryMaxChars: 4000 })
+  const { block } = assemble(mdFull, QUERY, { ...baseCfg, entryMaxChars: 4000 })
   // 默认门槛下该条目不入选，所以直接对 stripInjectionNoise(原正文) 断言
   const e = rows.find((r) => r.entry.title === '整理插件合并与安装路径').entry
   assert.ok(e.body.includes('<!-- tags:'), '原正文确实带中段元数据注释（夹具有效）')
@@ -187,7 +187,7 @@ test('entryMaxChars 以剔除后的正文计：刚好放得下时不出现截断
   const md = '# 项目长期记忆\n\n## 预算演示条目\n' + noisy + '\n' + filler.map(([t, b]) => '## ' + t + '\n' + b + '\n').join('\n')
   // 条目数 8 → 触发 inject 的 idf 门槛；预算演示条目的标题词唯一
   const q = '预算演示条目'
-  const cfg = { ...baseCfg, dynamicBudget: false, entryMaxChars: body.length + 5 }
+  const cfg = { ...baseCfg, entryMaxChars: body.length + 5 }
   const { block, trace } = assemble(md, q, cfg)
   const sec = memorySection(block)
   assert.ok(sec.includes('#### 预算演示条目'), sec.slice(0, 120))
@@ -307,10 +307,10 @@ test('带注释的 MEMORY.md 与手工去注释的等价 MEMORY.md 组装结果�
     meta('发布,回滚', '2026-01-02'), '## 发布回滚方案', '发布回滚需要先确认版本与告警。', '', '回滚后还要核对监控。', '',
     '## 夜间备份', '夜间备份每天03:20执行。', '',
   ].join('\n')
-  for (const dynamicBudget of [true, false]) for (const injectionMaxChars of [4000, 12000]) {
-    const cfg = { ...baseCfg, dynamicBudget, injectionMaxChars }
+  for (const injectionMaxChars of [4000, 12000]) {
+    const cfg = { ...baseCfg, injectionMaxChars }
     const a = assemble(dirty, '发布回滚', cfg).block, b = assemble(clean, '发布回滚', cfg).block
-    assert.equal(a, b, JSON.stringify({ dynamicBudget, injectionMaxChars }))
+    assert.equal(a, b, JSON.stringify({ injectionMaxChars }))
     assert.ok(!a.includes('wb-distill-batch'))
     if (injectionMaxChars === 12000) assert.ok(a.includes('回滚后还要核对监控。'), '预算充足时正文完整保留')
   }

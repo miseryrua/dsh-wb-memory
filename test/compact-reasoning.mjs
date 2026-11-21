@@ -1,17 +1,13 @@
 import assert from 'node:assert/strict'
-import { compactReasoningInfo, compactReasoningOption } from '../lib/compact-reasoning.js'
+import { compactReasoningEffort } from '../lib/compact-reasoning.js'
 const fixture = ids => ({ resolveModelInfo: async () => ({ reasoning: { efforts: ids.map(id => ({ id, name: id })) } }) })
-for (const explicit of [true, false]) {
-  for (const choice of ['auto', undefined]) {
-    assert.equal(await compactReasoningOption(fixture(['low','off','high']), 'p','m',choice,explicit), 'off', 'auto must disable thinking when advertised')
-    assert.equal(await compactReasoningOption(fixture(['low','high']), 'p','m',choice,explicit), undefined, 'auto must not fall back to low')
-    assert.equal(await compactReasoningOption(fixture([]), 'p','m',choice,explicit), undefined)
-    assert.equal(await compactReasoningOption({}, 'p','m',choice,explicit), undefined)
-    assert.equal(await compactReasoningOption({resolveModelInfo:async()=>{throw Error('lookup')}}, 'p','m',choice,explicit), undefined)
-  }
-}
-assert.equal(await compactReasoningOption(fixture(['off','low']), 'p','m','default',true), undefined)
-assert.equal(await compactReasoningOption(fixture(['off','low']), 'p','m','low',true), 'low')
-await assert.rejects(compactReasoningOption(fixture(['low']), 'p','m','off',true), /reasoning-unavailable/)
-assert.deepEqual((await compactReasoningInfo(fixture(['off','off','auto','default']), 'p','m')).efforts.map(e=>e.id), ['off'])
-console.log('compact-reasoning: auto off / no low fallback / inherited model / unknown capability / explicit policy passed')
+assert.equal(await compactReasoningEffort(fixture(['low','off','high']), 'p','m'), 'off', '公告 off 档时关闭思考')
+assert.equal(await compactReasoningEffort(fixture(['low','high']), 'p','m'), undefined, '未公告 off 时不回落 low')
+assert.equal(await compactReasoningEffort(fixture([]), 'p','m'), undefined)
+assert.equal(await compactReasoningEffort({}, 'p','m'), undefined, '宿主不提供能力查询')
+assert.equal(await compactReasoningEffort({resolveModelInfo:async()=>{throw Error('lookup')}}, 'p','m'), undefined, '查询失败按未公告处理')
+assert.equal(await compactReasoningEffort(fixture(['off']), '', 'm'), undefined, '缺少模型路由时不查询')
+assert.equal(await compactReasoningEffort({resolveModelInfo:async()=>({reasoning:{efforts:[{id:5},null,{id:'off'}]}})}, 'p','m'), 'off', '畸形档位被跳过')
+const aborted = new AbortController(); aborted.abort()
+assert.equal(await compactReasoningEffort({resolveModelInfo:()=>new Promise(()=>{})}, 'p','m', aborted.signal), undefined, '已中止时不挂起')
+console.log('compact-reasoning: off when advertised / no low fallback / unknown capability / lookup failure / abort passed')

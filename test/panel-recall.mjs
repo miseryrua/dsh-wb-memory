@@ -39,15 +39,15 @@ process.on('exit', () => { { try { __rmTmp(sandbox, { recursive: true, force: tr
 mkdirSync(join(plugin,'lib'),{recursive:true})
 for(const f of readdirSync(join(root,'lib')))if(f.endsWith('.js'))copyFileSync(join(root,'lib',f),join(plugin,'lib',f))
 copyFileSync(join(root,'package.json'),join(plugin,'package.json'))
-const cfg={enabled:true,autoDistill:false,sessionSummary:false,memoryHeat:false,memorySearchTool:false,workspaceRoot:wsroot,relevantTopK:5,injectionMaxChars:12000}
+const cfg={enabled:true,autoDistill:false,sessionSummary:false,memorySearchTool:false,workspaceRoot:wsroot,relevantTopK:5,injectionMaxChars:12000}
 writeFileSync(join(plugin,'config.json'),JSON.stringify(cfg))
 for(const ws of ['A','B']){const dir=join(wsroot,ws,'.workbuddy','memory');mkdirSync(dir,{recursive:true});writeFileSync(join(dir,'MEMORY.md'),ws==='A'?md:'## 仅B可见'+String.fromCharCode(10)+'其他工作区不能看到的内容。')}
 const idx=await import(pathToFileURL(join(plugin,'lib','index.js')))
 const cwd=join(wsroot,'A'), context={messages:[{role:'user',content:'发布回滚'}]}
-for(const dynamicBudget of [true,false])for(const injectionMaxChars of [4000,12000]){
- const c={...cfg,dynamicBudget,injectionMaxChars};let trace
+for(const injectionMaxChars of [4000,12000]){
+ const c={...cfg,injectionMaxChars};let trace
  const block=idx.buildMemoryBlock(cwd,context,c)
- test('旁路不改变最终注入 '+dynamicBudget+'/'+injectionMaxChars,()=>{assert.equal(idx.buildMemoryBlock(cwd,context,c,r=>trace=r),block);assert.equal(idx.buildMemoryBlock(cwd,context,c,()=>{throw Error('observer')}),block);assert.equal(trace.blockChars,block.length);assert.ok(block.length<=injectionMaxChars);assert.equal(trace.workspace,'A');assert.equal(trace.selected,1)})
+ test('旁路不改变最终注入 '+injectionMaxChars,()=>{assert.equal(idx.buildMemoryBlock(cwd,context,c,r=>trace=r),block);assert.equal(idx.buildMemoryBlock(cwd,context,c,()=>{throw Error('observer')}),block);assert.equal(trace.blockChars,block.length);assert.ok(block.length<=injectionMaxChars);assert.equal(trace.workspace,'A');assert.equal(trace.selected,1)})
 }
 let emptyTrace
 idx.buildMemoryBlock(cwd,{},cfg,r=>emptyTrace=r)
@@ -119,12 +119,8 @@ for(const options of [{ws:'../A'},{ws:'unknown'},{method:'POST',origin:'https://
 }
 response=await call('/api/wb-memory/memories',{ws:'B'})
 test('B工作区无A条目/ID',()=>{assert.equal(response.status,200);assert.equal(response.data.total,1);assert.equal(response.data.unmanaged,1);assert.ok(!JSON.stringify(response.data).includes(managedId))})
-const beforeLegacy=readFileSync(memoryFile,'utf8'),configLegacy=readFileSync(join(plugin,'config.json'),'utf8')
-for(const route of routes.filter(r=>r.path.startsWith('/wb-memory/')))for(const method of ['GET','POST','DELETE']){
- response=await call(route.path,{method,body:{enabled:true,workspace:'A'}})
- test('旧地址无条件410 '+route.path+' '+method,()=>assert.equal(response.status,410))
-}
-test('旧地址所有方法无配置/记忆副作用',()=>{assert.equal(readFileSync(memoryFile,'utf8'),beforeLegacy);assert.equal(readFileSync(join(plugin,'config.json'),'utf8'),configLegacy)})
+const beforeLegacy=readFileSync(memoryFile,'utf8')
+test('不再注册无 /api 前缀的旧地址',()=>assert.equal(routes.filter(r=>!r.path.startsWith('/api/')).length,0))
 response=await call('/api/wb-memory/file',{method:'POST',body:{workspace:'A',path:'MEMORY.md',content:'覆盖'}})
 test('通用文件接口不可覆盖已管理记忆',()=>{assert.equal(response.status,409);assert.equal(readFileSync(memoryFile,'utf8'),beforeLegacy)})
 for (const [method,name,expected] of [['POST','memory.md',409],['DELETE','mEmOrY.md',409],['POST','MEMORY.md.',400],['POST','MEMORY.md::$DATA',400]]) {

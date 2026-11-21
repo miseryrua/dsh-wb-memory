@@ -20,7 +20,5 @@
   "summaryIdleMs": 600000,
   "summaryMinUserChars": 300,
   "summaryMaxPerDay": 8,
-  "injectionMaxChars": 12000,
-  "dynamicBudget": true,
-  "memoryHeat": true
+  "injectionMaxChars": 12000
 }

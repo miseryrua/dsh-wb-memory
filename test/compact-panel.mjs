@@ -385,5 +385,35 @@ function byLabel(node,label) {
   ok(!treeText(n).includes('自动整理已暂停') && !byLabel(n,'立即手动整理（解除自动整理暂停）'),'不暂停时不显示提示：'+name)
  }
 }
+{
+ // 结构：六个面板必须并列在同一个容器下，且任一面板被选中时自己与全部祖先都不带 hidden
+ const ids=['overview','content','recall','distill','maintain','settings']
+ const ui=await renderWithStatus({...baseStatus(null),cold:{count:2}},{interactive:true})
+ const parentOf=(root,target)=>{let found=null;(function walk(n){if(!n||typeof n!=='object'||found)return;for(const c of n.children||[]){if(c===target){found=n;return}walk(c)}})(root);return found}
+ const pathTo=(root,target,trail=[])=>{if(!root||typeof root!=='object')return null;if(root===target)return [...trail,root];for(const c of root.children||[]){const p=pathTo(c,target,[...trail,root]);if(p)return p}return null}
+ const panelsOf=tree=>ids.map(id=>findNode(tree,n=>n.type==='section'&&n.props?.id==='wb-panel-'+id))
+ const first=panelsOf(ui.node)
+ ok(first.every(Boolean),'六个面板节点都存在')
+ const parents=first.map(p=>parentOf(ui.node,p))
+ ok(parents.every(p=>p&&p===parents[0]),'六面板互为兄弟（同一父节点）')
+ ok(parents[0].children.filter(c=>c.type==='section').map(c=>c.props.id).join(',')===ids.map(id=>'wb-panel-'+id).join(','),'面板容器内 section 顺序与导航一致')
+ ok(first.every(p=>!findNode({children:p.children},n=>n.type==='section')),'面板内部不嵌套其他面板')
+ const nav=findNode(ui.node,n=>n.props?.['aria-label']==='记忆管理分区')
+ for(const id of ids){
+  findNode(findNode(ui.render(),n=>n.props?.['aria-label']==='记忆管理分区'),n=>n.props?.key===id).props.onClick()
+  const tree=await ui.flush(),panels=panelsOf(tree),me=panels[ids.indexOf(id)]
+  const trail=pathTo(tree,me)||[]
+  ok(trail.length>0 && trail.every(n=>!n.props?.hidden),'切到 '+id+' 时面板及其祖先都可见')
+  ok(panels.filter(p=>!p.props.hidden).length===1,'切到 '+id+' 时只显示一个面板')
+  ok(treeText(me).replace(/\s/g,'').length>20,'切到 '+id+' 时面板有内容')
+ }
+ ok(Boolean(nav),'导航存在')
+ // 开关：全部为 role=switch，带可读名称
+ const tree=ui.render(),switches=[];(function walk(n){if(!n||typeof n!=='object')return;if(n.props?.role==='switch')switches.push(n);for(const c of n.children||[])walk(c)})(tree)
+ const names=switches.map(n=>n.props['aria-label']).sort().join(',')
+ ok(names===['会话小结','治理','自动提炼（含超阈值整理）','自动流水','记忆总开关','记忆检索工具'].sort().join(','),'六个开关齐全且有名称：'+names)
+ const text=treeText(tree)
+ ok(!/auto-distill|auto-compact/.test(text),'说明文字不含内部用语 auto-distill / auto-compact')
+}
 console.log('compact-panel: ' + passed + ' passed / ' + failed + ' failed')
 if (failed > 0) process.exit(1)

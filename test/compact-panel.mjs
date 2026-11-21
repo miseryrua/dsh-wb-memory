@@ -415,5 +415,30 @@ function byLabel(node,label) {
  const text=treeText(tree)
  ok(!/auto-distill|auto-compact/.test(text),'说明文字不含内部用语 auto-distill / auto-compact')
 }
+{
+ // 评审必须修 1：HTTP 200 + ok:false 的明确拒收要显示原因，不得报成连接中断
+ const state=await renderWithStatus(manualData({lastOk:false}),{interactive:true,post:()=>Promise.resolve({ok:true,status:200,text:async()=>JSON.stringify({ok:false,workspace:'测试工作区',skipped:null,result:{lastOk:false,errorCode:'insufficient-progress',errorMessage:'整理后仍超阈值且缩短不足 10%'}})})})
+ const node=await openAutomation(state);window.confirm=()=>true
+ await manualButton(node).props.onClick()
+ const text=treeText(await state.flush())
+ ok(text.includes('未通过整理：整理后仍超阈值且缩短不足 10%') && !text.includes('连接中断'),'明确拒收显示原因而非连接中断')
+ const s2=await renderWithStatus(manualData({lastOk:false}),{interactive:true,post:()=>Promise.resolve({ok:true,status:200,text:async()=>JSON.stringify({ok:false,workspace:'测试工作区',skipped:null,result:{lastOk:false,failedChecks:['entries']}})})})
+ const n2=await openAutomation(s2);await manualButton(n2).props.onClick()
+ const t2=treeText(await s2.flush())
+ ok(t2.includes('未通过整理：') && t2.includes('未过校验') && !t2.includes('连接中断'),'仅有校验项的拒收也显示原因')
+}
+{
+ // 评审必须修 2：暂停提示不得承诺原文不动（停手库仍会下沉）
+ const ap={paused:true,count:2,after:2,lastDay:'2026-11-13',lastRatio:0.027,baselineChars:23465,releaseDelta:0.15}
+ const st=await renderWithStatus({...manualData({lastOk:false}),compactAutoPause:ap},{interactive:true});const text=treeText(await openAutomation(st))
+ ok(!text.includes('原文不动') && text.includes('原样移到冷存') && text.includes('不调用模型'),'暂停提示说明仍可能下沉冷条目')
+}
+{
+ // 按面板找控件：开关与关键控件在各自面板内
+ const ui=await renderWithStatus({...baseStatus(null),cold:{count:2}},{interactive:true})
+ const tree=ui.render(),has=(label,name)=>Boolean(findNode(findSection(tree,label),n=>n.props?.['aria-label']===name))
+ for(const [label,name] of [['召回与检索','记忆检索工具'],['召回与检索','预览查询'],['提炼与整理','自动流水'],['提炼与整理','会话小结'],['提炼与整理','自动提炼（含超阈值整理）'],['提炼与整理','自动整理模型'],['提炼与整理','整理思考强度'],['提炼与整理','手动整理当前工作区一次'],['维护','治理'],['设置','记忆总开关']]) ok(has(label,name),label+' 面板内含控件：'+name)
+ ok(!treeText(findSection(tree,'维护')).includes('到文件列表查看'),'维护面板不再把回收站与备份导向文件列表')
+}
 console.log('compact-panel: ' + passed + ' passed / ' + failed + ' failed')
 if (failed > 0) process.exit(1)

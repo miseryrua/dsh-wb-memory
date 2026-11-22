@@ -338,7 +338,7 @@ function byLabel(node,label) {
  const tree=await renderWithStatus(baseStatus({lastOk:false,tokenBudget:'provider-default',maxTokens:null}));
  const text=treeText(tree);
  ok(text.includes('不设插件上限（上游默认）'),'手动结果预算区别于未知旧记录');
- ok(text.includes('自动整理使用已配置') && text.includes('不回落提炼预算') && text.includes('不保证成功'),'面板明确自动预算和上游限制不变');
+ ok(text.includes('不调用模型、不改写原文') && text.includes('不回落提炼预算') && text.includes('不保证成功'),'面板说明自动无需模型、手动上游限制不变');
 }
 {
  // 迭代 F2：自动整理暂停提示 + 手动整理入口
@@ -346,10 +346,8 @@ function byLabel(node,label) {
  const data={...manualData({lastOk:false,errorCode:'insufficient-progress'}),compactAutoPause:ap};let posts=[]
  const state=await renderWithStatus(data,{interactive:true,post:(url,init)=>{posts.push({url,init});return Promise.resolve({ok:true,status:200,text:async()=>JSON.stringify({ok:true})})}})
  const node=await openAutomation(state),text=treeText(node)
- ok(text.includes('自动整理已暂停：连续 2 次进展不足（最近 2026-11-13，缩短 2.7%）'),'暂停提示含次数、最近日期与缩短比例')
- ok(text.includes('15%') && text.includes('阈值'),'提示解除方式（库变化≥15%/降到阈值内）')
+ ok(!text.includes('自动整理已暂停'),'忽略旧暂停状态')
  const btn=byLabel(node,'立即手动整理（解除自动整理暂停）')
- ok(Boolean(btn) && !btn.props.disabled,'暂停时提供立即手动整理入口')
  if(btn){window.confirm=()=>true;await btn.props.onClick();ok(posts.length===1 && posts[0].url==='/api/wb-memory/compact-manual' && JSON.parse(posts[0].init.body).confirmed===true,'入口复用手动整理接口')}
  for(const [name,v] of [['paused=false',{...ap,paused:false}],['null',null],['缺字段',undefined]]){
   const st=await renderWithStatus({...manualData({lastOk:false}),compactAutoPause:v},{interactive:true});const n=await openAutomation(st)
@@ -408,7 +406,7 @@ function byLabel(node,label) {
  // 按面板找控件：开关与关键控件在各自面板内
  const ui=await renderWithStatus({...baseStatus(null),cold:{count:2}},{interactive:true})
  const tree=ui.render(),has=(label,name)=>Boolean(findNode(findSection(tree,label),n=>n.props?.['aria-label']===name))
- for(const [label,name] of [['召回与检索','记忆检索工具'],['召回与检索','预览查询'],['提炼与整理','自动流水'],['提炼与整理','会话小结'],['提炼与整理','自动提炼（含超阈值整理）'],['提炼与整理','自动整理模型'],['提炼与整理','手动整理当前工作区一次'],['设置','记忆总开关']]) ok(has(label,name),label+' 面板内含控件：'+name)
+ for(const [label,name] of [['召回与检索','记忆检索工具'],['召回与检索','预览查询'],['提炼与整理','自动流水'],['提炼与整理','会话小结'],['提炼与整理','自动提炼（含超阈值整理）'],['提炼与整理','手动整理模型'],['提炼与整理','手动整理当前工作区一次'],['设置','记忆总开关']]) ok(has(label,name),label+' 面板内含控件：'+name)
  ok(Boolean(findNode(findSection(tree,'维护'),n=>n.type==='button' && n.children.length===1 && n.children[0]==='治理')),'维护 面板内含治理按钮')
  ok(!treeText(findSection(tree,'维护')).includes('到文件列表查看'),'维护面板不再把回收站与备份导向文件列表')
 }

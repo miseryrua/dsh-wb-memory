@@ -19,7 +19,7 @@ for(const [error,code] of [['llm finish: aborted (timeout)','timeout'],['Bearer 
  assert.equal(v.errorCode,code); assert.ok(!JSON.stringify(v).includes('TOP_SECRET'));assert.ok(!JSON.stringify(v).includes('password'))
 }
 const v = project({__compact__:{ok:false,checks:{nonEmpty:true,shorter:false,lifecyclePreserved:false},retryError:'llm finish: truncated (max-tokens)',rounds:2}},compactStatus)
-assert.equal(v.errorCode,'llm-truncated');assert.deepEqual(v.failedChecks,['shorter','lifecyclePreserved']);assert.match(v.retryError,/截断/)
+assert.equal(v.errorCode,'llm-truncated');assert.deepEqual(v.failedChecks,['shorter']);assert.match(v.retryError,/截断/)
 assert.equal(project({},compactStatus),null)
 assert.equal(project({__compact__:{ok:false,day:'2026-10-20'}},compactStatus).stage,null,'没有证据的旧失败阶段应显示未知')
 assert.equal(result.tokenBudget,null,'旧记录不能被伪造为手动无上限')

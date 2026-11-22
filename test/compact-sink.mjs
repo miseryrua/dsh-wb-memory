@@ -27,7 +27,7 @@ try {
     yield {type:'text-delta',text:text.replace(/[。！？]/g,m=>quota-- > 0 ? '' : m)}
     yield {type:'finish',reason:'stop'}
   } }
-  const result = await compactMemoryIfOver(llm,cfg,dc,'fixture',dir,markers)
+  const result = await compactMemoryIfOver(llm,cfg,dc,'fixture',dir, markers, { force: true })
   assert.ok(result?.ok && result.sink?.count > 0, JSON.stringify(result))
   assert.equal(result.checks.anchorsPreserved,true)
   const hot = read('MEMORY.md'), cold = read('MEMORY-archive.md')

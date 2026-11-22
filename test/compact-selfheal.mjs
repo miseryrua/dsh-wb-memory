@@ -4,7 +4,6 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, copyF
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { migrateMemory, preservesLifecycle } from '../lib/memory-lifecycle.js'
 import { compactStatus } from '../lib/compact-status.js'
 import { COMPACT_MIN_PROGRESS, COMPACT_BATCH_TARGET_MIN_RATIO, planCompactBatches, compactMadeProgress, compactProgressOk, compactEntryGrowthLimit } from '../lib/compact-plan.js'
 const root = mkdtempSync(join(tmpdir(), 'wb-compact-selfheal-'))
@@ -58,7 +57,7 @@ try {
     if (!existsSync(dir)) mkdirSync(dir)
     const path = join(dir, 'MEMORY.md'); writeFileSync(path, raw)
     const calls = []
-    const result = await compactMemoryIfOver(makeLlm({ ratio, cap, grow, tamper, calls, fail }), config, dc, name, dir, markers)
+    const result = await compactMemoryIfOver(makeLlm({ ratio, cap, grow, tamper, calls, fail }), config, dc, name, dir, markers, { force: true })
     return { dir, path, calls, markers, result, name }
   }
 
@@ -71,7 +70,7 @@ try {
     assert.match(res.warnings, /^仍超阈值 \d+ 字符$/); assert.equal(res.warnings, '仍超阈值 ' + (res.after - 12000) + ' 字符')
     assert.ok(after.length >= res.after && after.length <= res.after + 1, '落盘内容即整理结果（至多补一个尾换行）')
     assert.ok(after.length < big.length)
-    assert.equal(count(after), 34); assert.ok(preservesLifecycle(big, after))
+    assert.equal(count(after), 34)
     const bak = join(r.dir, 'archive', 'MEMORY.bak-' + logicalDayStamp(cfg) + '.md')
     assert.equal(readFileSync(bak, 'utf8'), big, '整理前备份为原文')
     assert.equal(r.markers[r.name].__compact__.warnings, res.warnings, '日锁记录同样带 warnings，可与达标区分')
@@ -146,11 +145,11 @@ try {
     const dir = join(root, 'multi'); mkdirSync(dir)
     const markers = {}; let size = big.length; writeFileSync(join(dir, 'MEMORY.md'), big)
     const targets = [], sizes = [size]
-    for (let day = 0; day < 8; day++) {
+    for (let day = 0; day < 8 && size > cfg.memoryCharThreshold; day++) {
       const last = markers.multi?.__compact__
       if (last) markers.multi.__compact__ = { ...last, day: '2000-01-0' + (day + 1) } // 模拟日期推进
       const calls = []
-      const res = await compactMemoryIfOver(makeLlm({ cap: 1.7, calls }), cfg, dc, 'multi', dir, markers)
+      const res = await compactMemoryIfOver(makeLlm({ cap: 1.7, calls }), cfg, dc, 'multi', dir, markers, { force: true })
       if (res === null) break
       assert.equal(res.ok, true, '第 ' + (day + 1) + ' 天应接受：' + JSON.stringify(res))
       assert.ok(res.target >= 6000, '第 ' + (day + 1) + ' 天目标 ' + res.target + ' 不得塌向 3600 下限（F3 下限 0.5×阈值）')
@@ -162,7 +161,7 @@ try {
     const finalText = readFileSync(join(dir, 'MEMORY.md'), 'utf8')
     assert.ok(finalText.length <= 12000, '收敛进阈值：' + sizes.join(' → ') + '（目标 ' + targets.join('/') + '）')
     assert.ok(targets.length <= 4, '应在几天内收敛：' + sizes.join(' → '))
-    assert.equal(count(finalText), 34); assert.ok(preservesLifecycle(big, finalText))
+    assert.equal(count(finalText), 34)
   })
 
   await test('③d 失败日不连累次日目标：上一日 ok:false（目标 3600/超幅 4.5×）后次日仍用兜底目标', async () => {
@@ -228,7 +227,8 @@ try {
     const r = await run({ ratio: 0.3, fail: { 1: 'truncate', 2: 'few' } })
     assert.equal(r.calls.length, 2); assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'llm-truncated')
     assert.equal(readFileSync(r.path, 'utf8'), big); assert.ok(r.markers[r.name].__compact__.day)
-    assert.equal(await compactMemoryIfOver(makeLlm({ ratio: 0.3, calls: [] }), cfg, dc, r.name, r.dir, r.markers), null)
+    const automatic = await compactMemoryIfOver(null, cfg, dc, r.name, r.dir, r.markers)
+    assert.ok(automatic.sink.count > 0); assert.equal(automatic.totalCalls, 0)
   })
 
   await test('⑥ 逐批兜底④：部分成功但总进展 <10% → insufficient-progress 拒收、原文不变', async () => {
@@ -242,7 +242,7 @@ try {
     assert.ok(t.includes('60') && t.includes('34') && t.includes(String(compactEntryGrowthLimit(34))), t)
     assert.equal(compactEntryGrowthLimit(34), 43); assert.ok(t.includes('超出允许上限 43 条（原文 34 条）'), t)
     assert.ok(!t.includes('${'), t)
-    const all = { nonEmpty: false, shorter: false, underThreshold: false, keptHalfEntries: false, entryGrowthOk: false, noEntryGrowth: false, lifecyclePreserved: false }
+    const all = { nonEmpty: false, shorter: false, underThreshold: false, keptHalfEntries: false, entryGrowthOk: false, noEntryGrowth: false }
     for (const key of Object.keys(all)) assert.ok(!compactFeedbackText({ [key]: false }, info).includes('${'), key)
     assert.ok(!compactFeedbackText({ ...all, entryGrowthOk: true }, info).includes('${'), 'noEntryGrowth 分支')
     assert.ok(!compactFeedbackText(all, info).includes('${'), '全分支')
@@ -250,15 +250,6 @@ try {
 
   await test('小项：insufficient-progress 文案由 COMPACT_MIN_PROGRESS 推导', () => {
     assert.ok(compactStatus({ ok: false, errorCode: 'insufficient-progress', checks: { underThreshold: false } }).errorMessage.includes(Math.round(COMPACT_MIN_PROGRESS * 100) + '%'))
-  })
-
-  await test('④ 生命周期护栏：删除管理标记的输出（即便压缩进展充分）拒收', async () => {
-    const withIds = migrateMemory(big).text
-    const r = await run({ raw: withIds, ratio: 0.7, tamper: o => o.replace(/<!-- wb-memory:[^\n]+ -->\n/, '') })
-    assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'validation'); assert.equal(r.result.checks.lifecyclePreserved, false)
-    assert.equal(readFileSync(r.path, 'utf8'), withIds)
-    const ok = await run({ raw: withIds, ratio: 0.7 })
-    assert.equal(ok.result.ok, true, '无篡改时带管理标记的两批整理照常带警告接受'); assert.match(ok.result.warnings, /仍超阈值/)
   })
 
   await test('④ 条目数下限护栏仍有效：某批丢掉大半条目 → 拒收', async () => {
@@ -309,7 +300,7 @@ try {
     const dir = join(root, 'conflict'); mkdirSync(dir); const path = join(dir, 'MEMORY.md'); writeFileSync(path, big)
     const markers = {}, calls = []
     const llm = { stream: async function* (o) { calls.push(o); writeFileSync(path, big.replace('项目长期记忆', '人工编辑')); const { input } = inputOf(o); yield { type: 'text-delta', text: shrink(input, 0.7) }; yield { type: 'finish', reason: 'stop' } } }
-    const res = await compactMemoryIfOver(llm, cfg, dc, 'conflict', dir, markers)
+    const res = await compactMemoryIfOver(llm, cfg, dc, 'conflict', dir, markers, { force: true })
     assert.equal(res.conflict, true); assert.equal(markers.conflict.__compact__, undefined); assert.match(readFileSync(path, 'utf8'), /人工编辑/)
   })
 

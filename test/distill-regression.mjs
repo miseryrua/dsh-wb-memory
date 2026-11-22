@@ -1,3 +1,6 @@
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { Readable } from 'node:stream'
 /**
  * test/distill-regression.mjs — 任务B 回归测试：distill / compact / summary 的失败语义。
  *
@@ -156,6 +159,18 @@ async function callDistill(sb) {
   res.end = (b) => { res.body = b }
   await route.handler({ method: 'POST', url: '/api/wb-memory/distill?wait=1', headers: { host: '127.0.0.1:19387', origin: 'http://127.0.0.1:19387' } }, res)
   return { status: res.status, json: JSON.parse(res.body || '{}') }
+}
+
+async function callCompact(sb) {
+  const path = '/api/wb-memory/compact-manual'
+  const route = sb.routes.find(r => r.path === path)
+  const raw = readFileSync(join(sb.memDir, 'MEMORY.md'))
+  const req = Readable.from([JSON.stringify({ workspace: WS, expectedRevision: createHash('sha256').update(raw).digest('hex'), confirmed: true })])
+  Object.assign(req, { method: 'POST', url: path, headers: { host: '127.0.0.1:19387', origin: 'http://127.0.0.1:19387' } })
+  let status, json
+  await route.handler(req, { writeHead: s => { status = s }, end: b => { json = JSON.parse(b) } })
+  assert.equal(status, 200, JSON.stringify(json))
+  return { status, json }
 }
 
 // ---------------------------------------------------------------- 观测器
@@ -350,16 +365,15 @@ const MAIN = async () => {
     writeFileSync(join(sb.pluginDir, 'config.json'), JSON.stringify(conf, null, 2), 'utf8')
     const before = readFileSync(join(sb.memDir, 'MEMORY.md'))
     await boot(sb)
-    const r = await callDistill(sb)
+    const r = await callCompact(sb)
     const after = readFileSync(join(sb.memDir, 'MEMORY.md'))
     const cm = compactMarker(sb)
-    note('results=' + JSON.stringify(r.json.results) + ' compactMarker=' + JSON.stringify(cm))
+    note('results=' + JSON.stringify(r.json.result) + ' compactMarker=' + JSON.stringify(cm))
     A(before.equals(after), 'MEMORY.md 逐字节未变（失败不得覆盖）', before.length + ' -> ' + after.length)
     A(cm && cm.ok === false, 'compact 结果记为 ok:false', JSON.stringify(cm && cm.ok))
-    A(String(r.json.results[WS + '/compact'] || '').includes('kept original'), 'results 记 kept original', r.json.results[WS + '/compact'])
-    A(cm.errorCode === 'llm-error' && String(r.json.results[WS + '/compact'] || '').includes('llm-error'), '模型错误受控分类可诊断（不透上游任意错误）', r.json.results[WS + '/compact'])
+    A(cm.errorCode === 'llm-error' && r.json.result.errorCode === 'llm-error', '模型错误受控分类可诊断（不透上游任意错误）', r.json.result[WS + '/compact'])
     A(!JSON.stringify(cm).includes('stream broke mid-compaction'), '整理持久状态不保存上游错误正文')
-    A(Boolean(cm) && typeof cm.day === 'string' && cm.day.length === 10, '失败也写下当日 __compact__ 日锁（同日不反复重试）', JSON.stringify(cm && cm.day))
+    A(Boolean(cm) && typeof cm.day === 'string' && cm.day.length === 10, '失败也写下当日 __compact__ 尝试记录', JSON.stringify(cm && cm.day))
     cleanup(sb)
   }
   end()
@@ -380,10 +394,10 @@ const MAIN = async () => {
     conf.memoryCharThreshold = 300
     writeFileSync(join(sb.pluginDir, 'config.json'), JSON.stringify(conf, null, 2), 'utf8')
     await boot(sb)
-    const r = await callDistill(sb)
+    const r = await callCompact(sb)
     const cm = compactMarker(sb)
     const memLen = (memRaw(sb) || '').length
-    note('results=' + JSON.stringify(r.json.results) + ' compactMarker=' + JSON.stringify(cm))
+    note('results=' + JSON.stringify(r.json.result) + ' compactMarker=' + JSON.stringify(cm))
     A(cm && cm.ok === true, 'compact 成功', JSON.stringify(cm && cm.ok))
     A(memLen < 2400, 'MEMORY.md 被压缩', memLen)
     A((memRaw(sb) || '').includes('## 摘要 4'), '压缩结果已落地到 MEMORY.md')

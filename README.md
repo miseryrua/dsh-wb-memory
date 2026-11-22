@@ -6,22 +6,17 @@
 
 **给 DeepSeek Harness 的 Agent 一份跨会话长期记忆。** 真值源是各工作区的 Markdown 文件，无向量库、无第三方运行时依赖。每轮按预算注入画像、置顶、相关记忆和日志；后台小结、提炼与整理使用你指定的 LLM。
 
-**当前版本：0.14.2**
+**当前版本：0.14.3-rc.1**
 
 Node.js 22+ · MIT · Windows + Node 24 已实测
 
 [安装](#快速开始) · [记忆流水线](#自动化流水线) · [配置](#配置项) · [诊断](#状态与诊断) · [版本记录](#版本记录) · [更新记录](./CHANGELOG.md) · [测试](#开发与验收)
 
-## 本版变化（0.14.2）
+## 本版变化（0.14.3-rc.1）
 
-这一版只做精简，默认配置下的行为不变：
-
-- 移除单工作区一次性整理重试（`compact-retry` 路由与凭据目录）。
-- 整理思考强度不再可配置，固定为「宿主公告 off 档就关闭思考，否则不传参数」。
-- 删除 `dynamicBudget`、`memoryHeat`、`gcEnabled` 三个开关，对应行为始终开启。
-- 移除 `debug-cwd` 路由和只返回 410 的旧地址。
-
-逐版的详细记录、验收情况与已知限制见 [CHANGELOG.md](./CHANGELOG.md)。
+- 移除生命周期标记与跨层诊断，保留召回轨迹与只读记忆列表。
+- 巡检超容量时直接下沉，不调用模型；手动整理仍调用模型。
+- 合成召回评测改用 `node test/recall-eval-cli.mjs [1|3|5]`。
 
 ## 主要能力
 
@@ -30,7 +25,7 @@ Node.js 22+ · MIT · Windows + Node 24 已实测
 - **小结防丢**：完成轮次闲置后生成小结；本地快照支持重启恢复、失败重试及输入版本去重，继续聊天可以生成新版本。
 - **分块增量提炼**：当天及历史日志共用消费游标、前缀指纹与批次回执；追加续跑，失败不推进，残缺输出不入库。
 - **公平调度**：跨工作区、日期轮转；失败持久退避，不让前排反复失败耗尽全部额度。
-- **安全整理**：保留结构化写入护栏、备份与并发检查；仅整理允许合并完整尾部新条目，不自动置顶。超阈值而模型整理压不动时，程序把最冷的条目原样移到冷存文件，可移回。
+- **安全整理**：保留结构化写入护栏、备份与并发检查；仅整理允许合并完整尾部新条目，不自动置顶。自动巡检超阈值直接下沉到冷存，可移回；手动模型整理进展不足时仍可下沉。
 - **设置面板与原生工具**：管理记忆、配置模型、治理文件，并用 `memory_search` 同时检索长期条目与近期日志。
 
 ## 快速开始
@@ -55,7 +50,7 @@ Node.js 22+ · MIT · Windows + Node 24 已实测
 1. 指定工作区根：环境变量 `DSH_WORKSPACE_ROOT` 优先于 `workspaceRoot`。未指定时仅兼容已存在的旧 Windows 根 `D:/datas/Deepseek Harness`，不猜测用户目录；其他平台应显式配置绝对路径。
 2. 会话 cwd 位于该根的某工作区内时自动匹配，否则用面板选择的 `activeProject` 兜底。
 3. 在面板选择提炼模型；整理模型可独立选择，未指定时沿用提炼路由。路由不可用不会静默切到主 Agent 模型。
-4. 用只读 `GET /api/wb-memory/status` 核对 `runtimeRevision`，本版为 `2026-11-22-v0.14.2`；面板页头也显示这个标识。
+4. 用只读 `GET /api/wb-memory/status` 核对 `runtimeRevision`，本版为 `2026-11-22-v0.14.3-rc.1`；面板页头也显示这个标识。
 
 [config.example.json](./config.example.json) 提供无机器路径、无个人模型选择的示例。可在**尚无本机配置时**复制成插件目录的配置文件，再填写根目录及路由；不要覆盖已在用的配置。示例关闭了 `autoDistill` 和 `sessionSummary`，选好模型后自行开启，避免无意触发后台费用。程序缺字段仍使用内置默认值，不等同示例开关。
 
@@ -154,7 +149,7 @@ Node.js 22+ · MIT · Windows + Node 24 已实测
 
 | 路由 | 方法 | 用途 |
 | --- | --- | --- |
-| `/api/wb-memory/memories` | GET/POST | 生命周期列表/详情、迁移预览及显式修订；严格工作区、revision、备份及同源检查 |
+| `/api/wb-memory/memories` | GET | 按工作区读取长期记忆条目，每页 25 条 |
 | `/api/wb-memory/config` | GET/POST | 配置读写，POST字段白名单及同源检查 |
 | `/api/wb-memory/status` | GET | 只读工作区状态与全库诊断 |
 | `/api/wb-memory/recall-preview` | POST | 只读模拟召回，不记录实际账；同源校验、已知workspace与q长度校验 |
@@ -167,7 +162,6 @@ Node.js 22+ · MIT · Windows + Node 24 已实测
 | `/api/wb-memory/models` | GET | 已注册模型路由，不保证推理服务可用 |
 | `/api/wb-memory/compact-manual` | POST | 手动整理当前工作区一次，会调用整理模型 |
 | `/api/wb-memory/cold` | GET/POST | 冷存条目列表与移回 |
-| `/api/wb-memory/recall-eval` | GET | 合成召回评测，只读诊断 |
 
 所有接口只注册在 `/api` 前缀下，由宿主认证保护。
 
@@ -182,7 +176,7 @@ Node.js 22+ · MIT · Windows + Node 24 已实测
 | 分层预算 | `profileMaxChars pinnedMaxChars summaryMaxChars entryMaxChars relevantTopK logMaxChars weekWindowDays weekMaxChars weekSummaryDailyChars` |
 | 流水 | `autoDigest digestMaxPerDay digestUserChars digestAssistantChars` |
 | 小结 | `sessionSummary summaryIdleMs summaryMinUserChars summaryMaxPerDay` |
-| 模型与提炼 | `autoDistill distillProvider distillModel compactProvider compactModel compactMaxTokens compactRetryFeedback distillMaxInputChars distillMaxTokens distillTimeoutMs` |
+| 模型与提炼 | `autoDistill distillProvider distillModel compactProvider compactModel compactRetryFeedback distillMaxInputChars distillMaxTokens distillTimeoutMs` |
 | 调度与当天 | `distillIntervalMs distillStartDelayMs distillMaxBlocksPerSweep dailyDistill dailyDistillMinChars dailyDistillIdleMs` |
 | 检索 | `memorySearchTool searchLogDays searchLogTopK` |
 | 治理 | `logRetentionDays memoryCharThreshold dupThreshold trashRetentionDays archiveRetentionDays` |
@@ -199,7 +193,8 @@ Node.js 22+ · MIT · Windows + Node 24 已实测
 
 | 版本 | 变化 |
 | --- | --- |
-| **0.14.2** | 精简：移除单工作区重试、思考强度设置、三个开关、调试与旧地址路由；默认行为不变 |
+| **0.14.3-rc.1** | 精简生命周期、自动整理、召回评测和跨层诊断 |
+| 0.14.2 | 精简：移除单工作区重试、思考强度设置、三个开关、调试与旧地址路由；默认行为不变 |
 | 0.14.1 | 定版：冷条目下沉、提炼回执移出、tags 上限 8、六面板 |
 | 0.14.1-rc.4 | 严格保留份数、冲突隔离、冷存解析降级；未经真实验收 |
 | 0.14.1-rc.2 | 冷存面板移回、双文件中断恢复、外部修改保护；未经真实验收 |
@@ -223,11 +218,11 @@ Node.js 22+ · MIT · Windows + Node 24 已实测
 ```bash
 node --check lib/index.js
 node --check lib/client.js
-npm test                       # 四十个隔离套件，假模型，无真实LLM调用
+npm test                       # 三十六个隔离套件，假模型，无真实LLM调用
 node test/perf-v010.mjs         # 可选：合成集检索性能对照
 ```
 
-测试覆盖原135项护栏冒烟、首轮召回、完成态/残缺输出拒收、IDF效果、预算与只读注入、分块/崩溃回执恢复、并发上限、小结门禁、诊断、调度退避、网关替换system及解析器；面板/路由套件105项覆盖召回逐值等价、诊断字段白名单、工作区隔离、迁移备份/修订、写方法/同源拒绝；生命周期16项覆盖CRLF、元数据/关联异常、并发拒绝和真实整理入口保护。公开消息夹具为合成数据，不携带个人存档。小合成集的检索效果和性能不能当成真实库普遍收益。
+测试覆盖原135项护栏冒烟、首轮召回、完成态/残缺输出拒收、IDF效果、预算与只读注入、分块/崩溃回执恢复、并发上限、小结门禁、诊断、调度退避、网关替换system及解析器；面板与路由套件覆盖召回逐值等价、诊断字段白名单、工作区隔离、写方法与同源拒绝；另有自动下沉、内容判重、备份和冷存事务恢复回归。公开消息夹具为合成数据，不携带个人存档。小合成集的检索效果和性能不能当成真实库普遍收益。
 
 **2026-10-16真实端到端验收（0.10.5）：** 在隔离工作区验证了完整用户输入→闲置小结→自然提炼→长期入库→新会话首轮自动注入及无工具正确回答→同日志追加续跑。追加消费位置从950推进到1646，仅处理新增696字符；旧前缀SHA匹配、旧条目保留、新条目与批次回执各一份。
 

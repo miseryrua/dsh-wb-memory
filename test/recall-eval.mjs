@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * dsh-wb-memory 第三批：召回评测模块测试（lib/recall-eval.js，2026-10-17）
+ * dsh-wb-memory 第三批：召回评测模块测试（test/recall-eval-lib.mjs，2026-10-17）
  *
  * 覆盖：
  *   1) 内置合成案例完整性：≥20 条、覆盖中文/英文/混排/无关/弱词/空查询/重复标题/
- *      lifecycle 已退场/跨项目参数相似/数字纠正；运行模块不读 test 路径。
+ *      跨项目参数相似/数字纠正；运行模块不读 test 路径。
  *   2) fixture 与内置常量逐字一致（fixture 仅供测试/外部读取，lib 不反向依赖）。
  *   3) 指标计算正确性：用可手算的 stub ranker 验证 precision/recall/MRR/top1/
  *      多重集命中/禁选/空查询/耗时字段，不依赖真实算法。
@@ -18,7 +18,7 @@
 import fs from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import * as EVAL from '../lib/recall-eval.js'
+import * as EVAL from './recall-eval-lib.mjs'
 import { rankMemory } from '../lib/retrieve.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -42,7 +42,7 @@ section('内置合成案例完整性')
 ok(Array.isArray(CASES) && CASES.length >= 20, '内置案例 ≥ 20（实际 ' + CASES.length + '）')
 ok(new Set(CASES.map((c) => c.id)).size === CASES.length, '案例 id 唯一')
 const kinds = new Set(CASES.map((c) => c.kind))
-for (const k of ['zh', 'en', 'mixed', 'irrelevant', 'weak', 'empty', 'duplicate', 'lifecycle', 'cross-project', 'numeric', 'order']) {
+for (const k of ['zh', 'en', 'mixed', 'irrelevant', 'weak', 'empty', 'duplicate', 'cross-project', 'numeric', 'order']) {
   ok(kinds.has(k), '覆盖 kind=' + k)
 }
 ok(CASES.every((c) => c.assert === 'strict' || c.assert === 'observe'), '每条案例声明 strict/observe 口径')
@@ -50,16 +50,6 @@ ok(CASES.filter((c) => c.assert === 'strict').length >= 20, 'strict 案例至少
 // 时间敏感：固定旧日期，不用近 30 日相对日期
 const dateMentions = CASES.map((c) => c.memoryMd).join('\n')
 ok(!/date: 20(2[6-9]|[3-9][0-9])-\d{2}/.test(dateMentions.replace(/date: 2026-01-10/g, '')), '案例无其他 frontmatter 日期（固定 2026-01-10，远离加成窗口）')
-// lifecycle 案例的标记能被 inspectMemory 正常解析（与 memory-lifecycle 编码一致）
-const lcCase = byId('c13-lifecycle-superseded')
-const { inspectMemory } = await import('../lib/memory-lifecycle.js')
-let lcOk = true, lcErr = null
-try { const p = inspectMemory(lcCase.memoryMd); lcOk = p.records.length === 2 && p.records[0].meta.state === 'superseded' && p.records[1].meta.state === 'current' } catch (e) { lcOk = false; lcErr = e.message }
-ok(lcOk, 'superseded 案例的 wb-memory 标记真实有效' + (lcErr ? '（' + lcErr + '）' : ''))
-let reOk = true, reErr = null
-try { const p = inspectMemory(byId('c14-lifecycle-retracted-only').memoryMd); reOk = p.records[0].meta.state === 'retracted' } catch (e) { reOk = false; reErr = e.message }
-ok(reOk, 'retracted 案例的 wb-memory 标记真实有效' + (reErr ? '（' + reErr + '）' : ''))
-
 // ================= 2. fixture 一致性 =================
 section('fixture 与内置常量一致')
 const fixturePath = join(HERE, 'fixtures', 'recall-eval-cases.json')
@@ -72,8 +62,8 @@ if (fs.existsSync(fixturePath)) {
   ok(JSON.stringify(parsed && parsed.cases) === JSON.stringify(CASES), 'fixture 案例与 BUILTIN_RECALL_CASES 逐字一致（含全部字段）')
 }
 // 运行模块不读 test 路径：源码静态检查
-const libSrc = fs.readFileSync(join(ROOT, 'lib', 'recall-eval.js'), 'utf8')
-ok(!/test\/|fixtures\/|readFile|import\s*\(\s*['"]\./.test(libSrc), 'lib/recall-eval.js 无文件 IO、不引用 test/fixtures 路径')
+const libSrc = fs.readFileSync(join(HERE, 'recall-eval-lib.mjs'), 'utf8')
+ok(!/test\/|fixtures\/|readFile|import\s*\(\s*['"]\./.test(libSrc), 'test/recall-eval-lib.mjs 无文件 IO、不引用 test/fixtures 路径')
 
 // ================= 3. 指标计算正确性（stub ranker，可手算） =================
 section('指标计算正确性（stub ranker）')
@@ -142,7 +132,7 @@ console.log('  汇总：strict ' + real.summary.strictPassed + '/' + real.summar
 ok(real.summary.errorCases === 0 && real.summary.invalidCases === 0, '全部案例可执行，无错误/非法案例')
 ok(real.summary.strictCases >= 20 && real.summary.strictPassed === real.summary.strictCases, '全部 strict 案例通过（' + real.summary.strictPassed + '/' + real.summary.strictCases + '）')
 ok(real.summary.forbiddenHitCases.length === 0, '无禁选命中')
-ok(real.summary.expectEmptyCases === 6 && real.summary.expectEmptyOk === 6, '6 条空/无关/弱词案例全部正确空返回')
+ok(real.summary.expectEmptyCases === 5 && real.summary.expectEmptyOk === 5, '5 条空/无关/弱词案例全部正确空返回')
 
 // 弱项如实记录（不虚构全满分）：
 const r16 = real.perCase.find((p) => p.id === 'c16-numeric-exact')

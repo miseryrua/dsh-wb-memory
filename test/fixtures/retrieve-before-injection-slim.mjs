@@ -20,7 +20,11 @@
  *   - 不带 frontmatter 的旧记忆也能用：靠正文关键词匹配
  */
 
-import { inspectMemory } from '../../lib/memory-lifecycle.js'
+// 冻结对照仅接受无生命周期标记的语料，防止误用已退役的样本。
+function inspectMemory(md) {
+  if (String(md).includes('<!-- wb-memory:')) throw new Error('冻结对照不接受生命周期标记')
+  return null
+}
 
 // ---------- MEMORY.md 解析 ----------
 // 兼容两种 frontmatter 位置（v7.1 修复）：

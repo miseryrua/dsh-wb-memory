@@ -1,6 +1,6 @@
 {
   "kind": "recall-eval-cases",
-  "generatedFrom": "lib/recall-eval.js BUILTIN_RECALL_CASES",
+  "generatedFrom": "test/recall-eval-lib.mjs BUILTIN_RECALL_CASES",
   "cases": [
     {
       "id": "c01-zh-exact-term",
@@ -209,34 +209,6 @@
       ],
       "forbiddenTitles": [],
       "expectEmpty": false,
-      "assert": "strict"
-    },
-    {
-      "id": "c13-lifecycle-superseded",
-      "kind": "lifecycle",
-      "desc": "数字更正后旧口径条目已 superseded：同词查询只应召回现行修订条目",
-      "query": "超产奖金基数 12000",
-      "memoryMd": "# 项目长期记忆\n\n## 超产奖金阈值（旧）\n<!-- wb-memory:eyJ2IjoxLCJpZCI6Im1lbV8xMTExYWFhYTIyMjJiYmJiMzMzM2NjY2M0NDQ0ZGRkZCIsInN0YXRlIjoic3VwZXJzZWRlZCIsImJ5IjoibWVtXzk5OTllZWVlODg4OGZmZmY3Nzc3NjY2NjU1NTVhYWFhIiwiZXZlbnRzIjpbeyJhY3Rpb24iOiJjb3JyZWN0IiwiYXQiOiIyMDI2LTAyLTAxVDAwOjAwOjAwLjAwMFoiLCJyZWFzb24iOiLmlbDlrZfmm7TmraPvvJrln7rmlbAgODAwMCDmlLnkuLogMTIwMDAiLCJyZWxhdGVkIjoibWVtXzk5OTllZWVlODg4OGZmZmY3Nzc3NjY2NjU1NTVhYWFhIn1dfQ -->\n旧口径：超产奖金计算以 8000 为基数，按月结算\n\n## 超产奖金阈值（修订）\n<!-- wb-memory:eyJ2IjoxLCJpZCI6Im1lbV85OTk5ZWVlZTg4ODhmZmZmNzc3NzY2NjY1NTU1YWFhYSIsInN0YXRlIjoiY3VycmVudCIsImZyb20iOiJtZW1fMTExMWFhYWEyMjIyYmJiYjMzMzNjY2NjNDQ0NGRkZGQiLCJldmVudHMiOlt7ImFjdGlvbiI6ImNyZWF0ZWQiLCJhdCI6IjIwMjYtMDItMDFUMDA6MDA6MDAuMDAwWiIsInJlYXNvbiI6IuaVsOWtl-abtOato--8muWfuuaVsCA4MDAwIOaUueS4uiAxMjAwMCIsInJlbGF0ZWQiOiJtZW1fMTExMWFhYWEyMjIyYmJiYjMzMzNjY2NjNDQ0NGRkZGQifV19 -->\n新口径：超产奖金计算以 12000 为基数，按月结算\n",
-      "expectedTitles": [
-        "超产奖金阈值（修订）"
-      ],
-      "forbiddenTitles": [
-        "超产奖金阈值（旧）"
-      ],
-      "expectEmpty": false,
-      "assert": "strict"
-    },
-    {
-      "id": "c14-lifecycle-retracted-only",
-      "kind": "lifecycle",
-      "desc": "只有已撤回条目含查询词时应空返回（退场正文不当作当前事实）",
-      "query": "旧服务器 IP 是多少 192.168",
-      "memoryMd": "# 项目长期记忆\n\n## 旧服务器地址（已撤回）\n<!-- wb-memory:eyJ2IjoxLCJpZCI6Im1lbV9hYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OSIsInN0YXRlIjoicmV0cmFjdGVkIiwiZXZlbnRzIjpbeyJhY3Rpb24iOiJyZXRyYWN0IiwiYXQiOiIyMDI2LTAyLTAxVDAwOjAwOjAwLjAwMFoiLCJyZWFzb24iOiLmnI3liqHlmajlt7LkuIvnur8ifV19 -->\n旧服务部署在 192.168.1.50，端口 8080\n\n## 现行部署说明\n乙行 前端走 CDN，后端在云上\n",
-      "expectedTitles": [],
-      "forbiddenTitles": [
-        "旧服务器地址（已撤回）"
-      ],
-      "expectEmpty": true,
       "assert": "strict"
     },
     {

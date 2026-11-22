@@ -58,7 +58,7 @@ try {
     if (!existsSync(dir)) mkdirSync(dir)
     const path = join(dir, 'MEMORY.md'); writeFileSync(path, raw)
     const calls = [], markers = {}
-    const result = await compactMemoryIfOver(makeLlm(transform, calls), config, timeoutMs ? { ...dc, timeoutMs } : dc, name, dir, markers)
+    const result = await compactMemoryIfOver(makeLlm(transform, calls), config, timeoutMs ? { ...dc, timeoutMs } : dc, name, dir, markers, { force: true })
     return { result, calls, dir, path, after: readFileSync(path, 'utf8'), markers, name }
   }
   const retained = dir => { const p = join(dir, 'archive', 'compact-rejected.latest.json'); return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null }
@@ -136,12 +136,11 @@ try {
     assert.equal(retained(r.dir).rejectedBatches[0].attempts.length, 1)
   })
 
-  await test('E1 调用上限 4 次；每次 maxTokens 均为 floor(总预算/批数)，总和不超配置的 2 倍', async () => {
+  await test('E1 调用上限 4 次；手动整理每次均不传插件预算', async () => {
     const r = await run(input => lossy(input))
     assert.equal(r.calls.length, 4); assert.equal(r.result.totalCalls, 4)
     assert.equal(r.result.ok, false); assert.equal(r.result.errorCode, 'fidelity'); assert.equal(r.after, big)
-    assert.ok(r.calls.every(c => c.maxTokens === 8000), JSON.stringify(r.calls.map(c => c.maxTokens)))
-    assert.ok(r.calls.reduce((n, c) => n + c.maxTokens, 0) <= 2 * baseCfg.compactMaxTokens)
+    assert.ok(r.calls.every(c => c.maxTokens === undefined))
     assert.equal(r.result.rejectionRetained, true); assert.equal(retained(r.dir).rejectedBatches.length, 2)
   })
 

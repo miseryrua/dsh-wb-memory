@@ -417,7 +417,7 @@ try {
       yield { type: 'finish', reason: 'stop' }
     },
   }
-  const r1 = await idx.compactMemoryIfOver(llm1, ccfg, cdc, 'ws1', d1, mk1)
+  const r1 = await idx.compactMemoryIfOver(llm1, ccfg, cdc, 'ws1', d1, mk1, { force: true })
   const disk1 = readFileSync(mp1, 'utf8')
   ok(r1 && r1.ok === true, 'C1a：compact 遇完整新条目纯追加 → 安全合并')
   ok(disk1 === MEM_NEW.trimEnd() + '\n\n## 并发写入\n会话在窗口内追加的条目\n', 'C1b：整理输出与追加条目都保留')
@@ -435,7 +435,7 @@ try {
         yield { type: 'finish', reason: 'stop' }
       },
     }
-    const r2 = await idx.compactMemoryIfOver(llm2, ccfg, cdc, 'ws2', d2, mk2)
+    const r2 = await idx.compactMemoryIfOver(llm2, ccfg, cdc, 'ws2', d2, mk2, { force: true })
     ok(r2 && r2.ok === true, 'C2a：窗口内无人改动 → 正常整理落盘')
     const disk2b = readFileSync(mp2, 'utf8')
     ok(disk2b.trimEnd() === MEM_NEW.trimEnd() && disk2b.includes('压缩甲'), 'C2b：磁盘内容=LLM 输出（stripFence + 补尾换行）')
@@ -464,7 +464,7 @@ try {
       yield { type: 'finish', reason: 'stop' }
     },
   }
-  const r3 = await idx.compactMemoryIfOver(llm3, ccfg2, cdc, 'ws3', d3, mk3)
+  const r3 = await idx.compactMemoryIfOver(llm3, ccfg2, cdc, 'ws3', d3, mk3, { force: true })
   ok(call3 === 2, 'C3a：首轮不合规触发同轮重试（实际调用 ' + call3 + ' 次）')
   ok(r3 && r3.ok === false, 'C3b：第二轮散文化（0 条目）→ 拒收')
   ok(readFileSync(mp3, 'utf8') === MEM_SRC, 'C3c：原文件逐字节保留（旧实现会整份覆盖）')
@@ -491,7 +491,7 @@ try {
       yield { type: 'finish', reason: 'stop' }
     },
   }
-  const r4 = await idx.compactMemoryIfOver(llm4, ccfg2, cdc, 'ws4', d4, mk4)
+  const r4 = await idx.compactMemoryIfOver(llm4, ccfg2, cdc, 'ws4', d4, mk4, { force: true })
   ok(r4 && r4.ok === true && r4.rounds === 2, 'C4a：第二轮条目数达标 + 超阈值 → 带警告接受（underThreshold 仍是建议）')
   ok(!!(r4 && r4.warnings && r4.warnings.includes('仍超阈值')), 'C4b：warnings 记录「仍超阈值」（实际 ' + (r4 && r4.warnings) + '）')
   ok(readFileSync(mp4, 'utf8').trimEnd() === MEM_NEW4.trimEnd(), 'C4c：该路径仍正常落盘')

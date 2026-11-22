@@ -27,7 +27,7 @@ try {
       yield { type: 'finish', reason: mode === 'truncated' && calls.length === 2 ? 'max-tokens' : 'stop' }
     } }
     const dc = { provider: 'distill-provider', model: 'distill-model', maxTokens: 37, timeoutMs: mode === 'timeout' ? 10 : 1000 }
-    const result = await compactMemoryIfOver(llm, config, dc, name, dir, markers, { tokenBudget })
+    const result = await compactMemoryIfOver(llm, config, dc, name, dir, markers, { force: tokenBudget === 'provider-default' })
     return { calls, markers, result, dir, raw }
   }
   const manual = await run('manual', 'provider-default')
@@ -38,10 +38,7 @@ try {
   assert.equal((readFileSync(join(manual.dir, 'MEMORY.md'), 'utf8').match(/^## /gm) || []).length, 12)
   assert.equal(cfg.compactMaxTokens, 1, 'manual retry must not mutate automatic configuration')
   const tiny = await run('tiny-auto', 'configured')
-  assert.equal(tiny.calls.length, 0); assert.equal(tiny.result.errorCode, 'budget-too-small')
-  const automatic = await run('automatic', 'configured', 'ok', { ...cfg, compactMaxTokens: 8000 })
-  assert.ok(automatic.result.ok); assert.deepEqual(automatic.calls.map(c => c.maxTokens), [4000, 4000])
-  assert.equal(automatic.result.tokenBudget, 'configured'); assert.equal(automatic.result.maxTokens, 8000)
+  assert.equal(tiny.calls.length, 0); assert.ok(tiny.result.sink.count > 0)
   const bad = await run('truncated', 'provider-default', 'truncated')
   // 逐批兜底（任务 A 评审）：第二批截断 → 该批回退原文、第一批结果保留；截断的残缺输出绝不写入
   assert.equal(bad.calls.length, 2); assert.equal(bad.result.ok, true); assert.equal(bad.result.fallbackBatches, 1); assert.equal(bad.result.fallbackError, 'llm-truncated')

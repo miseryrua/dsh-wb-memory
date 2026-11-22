@@ -1,3 +1,5 @@
+import { rankMemory } from '../lib/retrieve.js'
+
 /**
  * dsh-wb-memory 召回评测模块（第三批，2026-10-17）。
  *
@@ -6,7 +8,7 @@
  *     ranker（形状 = 现有 rankMemory(md, query, opts)），输出 JSON 可读的逐案例
  *     结果与汇总（命中 / 漏召回 / 禁选命中 / 空查询 / 排序级精度召回 / 耗时）。
  *   - 本模块不做任何 IO：不读文件、不写文件、不发请求；运行时需要的内置合成
- *     案例以常量 BUILTIN_RECALL_CASES 导出（供主线只读面板运行），测试用 fixture
+ *     案例以常量 BUILTIN_RECALL_CASES 导出（供离线命令行运行），测试用 fixture
  *     由该常量生成并保持逐字一致。
  *   - 评测级结果只反映「检索命中」，不当作模型回答质量，也不作自动准入标准。
  *   - 影子对照 shadowCompareCases 仅对同一案例比较「传入的两个 ranker」（即离线
@@ -18,14 +20,6 @@
  * 运行时点超过 90 天（entryBonus 的 30/90 天加成恒为 ×1.0），避免测试随运行
  * 时间腐化；不使用「近 30 天」的相对日期元数据。
  */
-
-// ---------- 合成案例用的确定性生命周期标记（与 lib/memory-lifecycle.js 编码一致） ----------
-const LIFECYCLE_AT = '2026-02-01T00:00:00.000Z'
-const encMeta = (meta) => '<!-- wb-memory:' + Buffer.from(JSON.stringify(meta)).toString('base64url') + ' -->'
-const MEM_OLD = 'mem_' + '1111aaaa2222bbbb3333cccc4444dddd' // 旧口径（被替代）
-const MEM_NEW = 'mem_' + '9999eeee8888ffff777766665555aaaa' // 新口径（现行）
-const MEM_RET = 'mem_' + 'abcdef0123456789abcdef0123456789' // 已撤回
-const marker = (meta) => encMeta(meta)
 
 const md = (lines) => lines.join('\n')
 
@@ -352,52 +346,6 @@ function buildBuiltinCases() {
     expectedTitles: ['环境变量约定', '环境变量约定'],
     forbiddenTitles: [],
     expectEmpty: false,
-    assert: 'strict',
-  })
-
-  // ---- 生命周期已退场 ----
-  cases.push({
-    id: 'c13-lifecycle-superseded',
-    kind: 'lifecycle',
-    desc: '数字更正后旧口径条目已 superseded：同词查询只应召回现行修订条目',
-    query: '超产奖金基数 12000',
-    memoryMd: md([
-      '# 项目长期记忆',
-      '',
-      '## 超产奖金阈值（旧）',
-      marker({ v: 1, id: MEM_OLD, state: 'superseded', by: MEM_NEW, events: [{ action: 'correct', at: LIFECYCLE_AT, reason: '数字更正：基数 8000 改为 12000', related: MEM_NEW }] }),
-      '旧口径：超产奖金计算以 8000 为基数，按月结算',
-      '',
-      '## 超产奖金阈值（修订）',
-      marker({ v: 1, id: MEM_NEW, state: 'current', from: MEM_OLD, events: [{ action: 'created', at: LIFECYCLE_AT, reason: '数字更正：基数 8000 改为 12000', related: MEM_OLD }] }),
-      '新口径：超产奖金计算以 12000 为基数，按月结算',
-      '',
-    ]),
-    expectedTitles: ['超产奖金阈值（修订）'],
-    forbiddenTitles: ['超产奖金阈值（旧）'],
-    expectEmpty: false,
-    assert: 'strict',
-  })
-
-  cases.push({
-    id: 'c14-lifecycle-retracted-only',
-    kind: 'lifecycle',
-    desc: '只有已撤回条目含查询词时应空返回（退场正文不当作当前事实）',
-    query: '旧服务器 IP 是多少 192.168',
-    memoryMd: md([
-      '# 项目长期记忆',
-      '',
-      '## 旧服务器地址（已撤回）',
-      marker({ v: 1, id: MEM_RET, state: 'retracted', events: [{ action: 'retract', at: LIFECYCLE_AT, reason: '服务器已下线' }] }),
-      '旧服务部署在 192.168.1.50，端口 8080',
-      '',
-      '## 现行部署说明',
-      '乙行 前端走 CDN，后端在云上',
-      '',
-    ]),
-    expectedTitles: [],
-    forbiddenTitles: ['旧服务器地址（已撤回）'],
-    expectEmpty: true,
     assert: 'strict',
   })
 
@@ -802,4 +750,23 @@ export function shadowCompareCases(cases, rankerA, rankerB, opts = {}) {
       bFewerReturns: perCase.filter((p) => p.onlyInA.length > 0).length,
     },
   }
+}
+
+
+// 此处对observe案例也展示目标是否满足，不能用测试的宽松断言隐藏薄弱项。
+export function runRecallEvaluation(candidateK = 1) {
+  if (![1,3,5].includes(candidateK)) throw new RangeError('candidateK仅允许1、3或5')
+  const side = k => {
+    const raw = evaluateRecall(BUILTIN_RECALL_CASES, (md,q,opts) => rankMemory(md,q,{...opts,k,scene:'inject'}))
+    const cases = raw.perCase.map((r,i) => {
+      const c = BUILTIN_RECALL_CASES[i], selectedTitles = r.returnedTitles || []
+      const missedTitles = r.error ? c.expectedTitles.slice() : r.missed || []
+      const forbiddenHits = r.forbiddenReturned || []
+      const unexpectedTitles = selectedTitles.filter(t => !c.expectedTitles.includes(t))
+      const passed = !r.error && !missedTitles.length && !forbiddenHits.length && !unexpectedTitles.length && (c.expectEmpty ? selectedTitles.length === 0 : c.expectedTitles.includes(selectedTitles[0]))
+      return { id:c.id, query:c.query, passed, selectedTitles, missedTitles, forbiddenHits, unexpectedTitles, error:r.error || null, expectation:c.expectEmpty?'empty':'top1-and-expected', candidateChars:r.candidateChars || 0 }
+    })
+    return { summary:{caseCount:cases.length, passed:cases.filter(c=>c.passed).length, expectedHits:raw.summary.hitTotal, expectedTotal:raw.summary.expectedTotal, forbiddenHits:cases.reduce((n,c)=>n+c.forbiddenHits.length,0)}, cases }
+  }
+  return { baselineK:5, candidateK, baseline:side(5), candidate:side(candidateK), synthetic:true }
 }

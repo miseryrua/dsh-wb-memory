@@ -13,7 +13,7 @@ import {
 import { compactStatus } from '../lib/compact-status.js'
 import { readMemoryEntries } from '../lib/retrieve.js'
 import { stripInjectionNoise } from '../lib/injection-slim.js'
-import { inspectMemory } from '../lib/memory-lifecycle.js'
+
 
 const root = mkdtempSync(join(tmpdir(), 'wb-compact-fidelity-'))
 let passed = 0
@@ -203,7 +203,7 @@ try {
     const name = 'ws' + (++seq), dir = join(root, name); mkdirSync(dir)
     const path = join(dir, 'MEMORY.md'); writeFileSync(path, raw)
     const calls = []
-    const result = await compactMemoryIfOver(makeLlm(transform, calls), cfg, dc, name, dir, markers)
+    const result = await compactMemoryIfOver(makeLlm(transform, calls), cfg, dc, name, dir, markers, { force: true })
     return { result, calls, path, dir, after: readFileSync(path, 'utf8'), markers, name }
   }
   const stored = r => readFileSync(join(r.dir, 'distill-receipts.txt'), 'utf8')
@@ -233,7 +233,7 @@ try {
   await test('D1 回执位置：集中在文末；inspectMemory、条目计数、readMemoryEntries、注入瘦身、去重 includes 都照常', async () => {
     const r = await run(big, good)
     assert.equal(receiptsOf(r.after).length, 0)
-    inspectMemory(r.after)
+
     assert.equal(readMemoryEntries(r.after).filter(e => e.title !== '（前言）').length, 34)
     assert.ok(!/wb-distill-batch/.test(stripInjectionNoise(r.after)), '注入瘦身剔除回执')
     for (const rc of bigReceipts) assert.ok(stored(r).includes(rc), 'distillWorkspaceDate 的 includes 去重仍命中：' + rc.slice(0, 30))

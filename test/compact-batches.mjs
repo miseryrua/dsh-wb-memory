@@ -22,14 +22,13 @@ try {
    yield {type:'reasoning-delta',text:'abc'};yield {type:'text-delta',text}
    yield {type:'finish',reason:mode==='truncated' && index===2 ? 'max-tokens' : 'stop'}
   }}
-  const result=await compactMemoryIfOver(llm,cfg,{provider:'fixture',model:'fixture',timeoutMs:1000},name,dir,markers)
+  const result=await compactMemoryIfOver(llm,cfg,{provider:'fixture',model:'fixture',timeoutMs:1000},name,dir, markers, { force: true })
   return {dir,calls,markers,result}
  }
  const good=await run('good','ok')
  assert.equal(good.calls.length,2,'大记忆按完整条目预分两批，不再整篇请求')
  assert.ok(good.result.ok);assert.equal(good.result.batches,2);assert.equal(good.result.totalCalls,2)
- assert.ok(good.calls.reduce((n,c)=>n+c.maxTokens,0)<=8000,'总生成预算不得因分批膨胀')
- assert.ok(good.calls.every(c=>c.maxTokens===4000))
+ assert.ok(good.calls.every(c=>!Object.hasOwn(c,'maxTokens')),'手动分批不设插件预算')
  assert.equal(good.result.reasoningChars,6);assert.ok(good.result.outputChars>0)
  assert.equal((readFileSync(join(good.dir,'MEMORY.md'),'utf8').match(/^## /gm)||[]).length,12)
  // 逐批兜底（任务 A 评审）：第二批截断 → 第一批整理结果落盘、第二批原文逐字保留，不写残缺输出

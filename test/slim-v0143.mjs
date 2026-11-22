@@ -75,6 +75,8 @@ try {
   })
   assert.ok(['sink-failed', 'conflict'].includes(collision.errorCode))
   const lib = new URL('../lib/', import.meta.url)
+  const clientSource = readFileSync(new URL('client.js', lib), 'utf8')
+  assert.doesNotMatch(clientSource, /可以更正、撤回|每日重试额度|思考档位|每日防震荡|当日次数/)
   for (const name of readdirSync(lib).filter(n => n.endsWith('.js'))) {
     const text = readFileSync(new URL(name, lib), 'utf8')
     assert.doesNotMatch(text, /(?:from|import)\s*[(]?\s*['"][^'"]*(memory-lifecycle|compact-autopause|cross-layer-|injection-sources|recall-eval|\/test\/)/, name)

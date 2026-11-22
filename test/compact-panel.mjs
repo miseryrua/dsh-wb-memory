@@ -413,19 +413,22 @@ function byLabel(node,label) {
 
 {
  const { compactStatus } = await import('../lib/compact-status.js');
+ const failedManual = await renderWithStatus(baseStatus(compactStatus({ ok:false, model:'fixture', totalCalls:1, errorCode:'llm-truncated' })));
+ ok(Boolean(findNode(failedManual, n => n.props?.className === 'wb-badge' && treeText(n) === '失败' && n.children.some(child => child?.props?.style?.background === '#e5484d'))), '普通手动失败仍是红色徽标');
  const base = { ok:false, before:3754, after:1570, errorCode:'insufficient-progress', totalCalls:0 };
  for (const [record, code, text] of [
   [{...base,sink:{count:7,after:1570}},'sink-partial','已下沉 7 条到冷存，热存仍超容量阈值（至少保留 5 条，或其余条目不可下沉）；可手动整理或人工精简。'],
-  [{...base,sink:{count:0}},'sink-none','没有可下沉的条目，热存仍超容量阈值；可手动整理或人工精简。'],
+  [{...base,after:undefined,sink:{count:0}},'sink-none','没有可下沉的条目，热存仍超容量阈值；可手动整理或人工精简。'],
   [{...base,errorCode:'sink-failed'},'sink-failed','下沉读写失败，热存未改动；下次巡检会重试。'],
   [{...base,totalCalls:1,sink:{count:0}},'insufficient-progress','整理结果仍超阈值且缩短不足 10%，视为无实质进展，已保留原文件。'],
  ]) {
   const compact = compactStatus(record);
   ok(compact.errorCode === code && compact.errorMessage === text, '原因投影：' + code);
-  if (code === 'sink-partial') {
+  if (code === 'sink-partial' || code === 'sink-none') {
    const ui = await renderWithStatus(baseStatus(compact));
    const shown = treeText(ui);
-   ok(shown.includes(text) && shown.includes('3754 → 1570') && !/已保留原文件|未写回/.test(shown), '部分下沉显示实际写入且不误报保留原文');
+   ok(shown.includes(text) && !/失败|null|undefined|未知 token|已保留原文件|未写回/.test(shown), '容量提示不误报失败：' + code);
+   ok(shown.includes('△ ') && (code !== 'sink-partial' || shown.includes('3754 → 1570')), '容量总览与实际写入：' + code);
   }
  }
 }

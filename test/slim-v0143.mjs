@@ -57,6 +57,14 @@ try {
     assert.ok(await attempt(), name + ' 应重新判断')
     return result
   }
+  const manualDir = join(root, 'manual-sink'); mkdirSync(manualDir); writeFileSync(file(manualDir), raw)
+  const manualState = { A: {} }
+  const echo = { stream: async function* () { yield { type: 'text-delta', text: raw }; yield { type: 'finish', reason: 'stop' } } }
+  const manualSink = await compactMemoryIfOver(echo, cfg, dc, 'A', manualDir, manualState, { force: true })
+  assert.equal(manualSink.sink.count, 7)
+  const manualRecord = structuredClone(manualState.A.__compact__)
+  assert.equal(await compactMemoryIfOver(null, cfg, dc, 'A', manualDir, manualState), null)
+  assert.deepEqual(manualState.A.__compact__, manualRecord)
   const cleared = await race('cleared', (stage, home) => {
     if (stage === 'cleared') writeFileSync(file(home), readFileSync(file(home), 'utf8') + entry(40) + entry(41))
   })

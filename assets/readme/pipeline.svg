@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="pipeTitle pipeDesc">
   <title id="pipeTitle">dsh-wb-memory 的自动化流水线与治理</title>
-  <desc id="pipeDesc">三步流水线加一层治理。每轮对话后 auto-digest 用零 LLM 把要求与结论追加进当日日志；每小时 auto-distill 用 LLM 把历史日志按工作区和日期幂等地提炼成 MEMORY.md 条目，坑条目要求四段式；MEMORY.md 超字符阈值时 auto-compact 先备份到 archive 再压缩回阈值内，必须变短且条目数不少于一半。治理按 TTL 归档过期日志、清理回收站与归档超期副本，近重复检测只报告不合并。写入护栏在 compact 与 USER.md 候选写盘前重读比对，不一致就放弃本次、下一轮重试。</desc>
+  <desc id="pipeDesc">三步流水线加一层治理。每轮对话后 auto-digest 用零 LLM 把要求与结论追加进当日日志；每小时 auto-distill 用 LLM 把历史日志按工作区和日期幂等地提炼成 MEMORY.md 条目，坑条目要求四段式；MEMORY.md 超字符阈值时 auto-compact 先备份到 archive，再把冷条目原样移到冷存；只有手动整理才调用模型。治理按 TTL 归档过期日志、清理回收站与归档超期副本，近重复检测只报告不合并。写入护栏在 compact 与 USER.md 候选写盘前重读比对，不一致就放弃本次、下一轮重试。</desc>
   <rect width="1200" height="420" rx="26" fill="#0B0E12"/>
   <text x="56" y="44" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" letter-spacing="1.5" fill="#6EA8FE">自动化流水线 · 后台自己跑</text>
   <g id="step-1" transform="translate(56 84)">
@@ -27,9 +27,9 @@
     <rect width="330" height="156" rx="16" fill="#12171D" stroke="#232B34"/>
     <text x="18" y="26" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8A94A0">③ 超阈值时</text>
     <text x="18" y="52" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="20" fill="#6EA8FE">auto-compact</text>
-    <text x="18" y="84" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="22" font-weight="700" fill="#E7EBF0">超阈值 → 压缩</text>
-    <text x="18" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">先备份到 archive/ 再压回阈值</text>
-    <text x="18" y="136" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">必须变短、条目数不少于一半</text>
+    <text x="18" y="84" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="22" font-weight="700" fill="#E7EBF0">超阈值 → 下沉</text>
+    <text x="18" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">先备份，再原样移到冷存</text>
+    <text x="18" y="136" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="18" fill="#8A94A0">只有手动整理才调用模型</text>
   </g>
   <g id="governance" transform="translate(56 270)">
     <rect width="1088" height="84" rx="16" fill="#12171D" stroke="#232B34"/>

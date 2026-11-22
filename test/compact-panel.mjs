@@ -348,7 +348,7 @@ function byLabel(node,label) {
  const node=await openAutomation(state),text=treeText(node)
  ok(!text.includes('自动整理已暂停'),'忽略旧暂停状态')
  const btn=byLabel(node,'立即手动整理（解除自动整理暂停）')
- if(btn){window.confirm=()=>true;await btn.props.onClick();ok(posts.length===1 && posts[0].url==='/api/wb-memory/compact-manual' && JSON.parse(posts[0].init.body).confirmed===true,'入口复用手动整理接口')}
+ ok(!btn && posts.length === 0, '旧解除暂停按钮不存在');
  for(const [name,v] of [['paused=false',{...ap,paused:false}],['null',null],['缺字段',undefined]]){
   const st=await renderWithStatus({...manualData({lastOk:false}),compactAutoPause:v},{interactive:true});const n=await openAutomation(st)
   ok(!treeText(n).includes('自动整理已暂停') && !byLabel(n,'立即手动整理（解除自动整理暂停）'),'不暂停时不显示提示：'+name)
@@ -410,5 +410,25 @@ function byLabel(node,label) {
  ok(Boolean(findNode(findSection(tree,'维护'),n=>n.type==='button' && n.children.length===1 && n.children[0]==='治理')),'维护 面板内含治理按钮')
  ok(!treeText(findSection(tree,'维护')).includes('到文件列表查看'),'维护面板不再把回收站与备份导向文件列表')
 }
+
+{
+ const { compactStatus } = await import('../lib/compact-status.js');
+ const base = { ok:false, before:3754, after:1570, errorCode:'insufficient-progress', totalCalls:0 };
+ for (const [record, code, text] of [
+  [{...base,sink:{count:7,after:1570}},'sink-partial','已下沉 7 条到冷存，热存仍超容量阈值（至少保留 5 条，或其余条目不可下沉）；可手动整理或人工精简。'],
+  [{...base,sink:{count:0}},'sink-none','没有可下沉的条目，热存仍超容量阈值；可手动整理或人工精简。'],
+  [{...base,errorCode:'sink-failed'},'sink-failed','下沉读写失败，热存未改动；下次巡检会重试。'],
+  [{...base,totalCalls:1,sink:{count:0}},'insufficient-progress','整理结果仍超阈值且缩短不足 10%，视为无实质进展，已保留原文件。'],
+ ]) {
+  const compact = compactStatus(record);
+  ok(compact.errorCode === code && compact.errorMessage === text, '原因投影：' + code);
+  if (code === 'sink-partial') {
+   const ui = await renderWithStatus(baseStatus(compact));
+   const shown = treeText(ui);
+   ok(shown.includes(text) && shown.includes('3754 → 1570') && !/已保留原文件|未写回/.test(shown), '部分下沉显示实际写入且不误报保留原文');
+  }
+ }
+}
+
 console.log('compact-panel: ' + passed + ' passed / ' + failed + ' failed')
 if (failed > 0) process.exit(1)

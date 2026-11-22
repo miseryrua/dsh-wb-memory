@@ -85,6 +85,12 @@ test('关闭总控仍可预览但明确enabled=false',()=>{assert.equal(response
 const memoryFile=join(wsroot,'A','.workbuddy','memory','MEMORY.md')
 const listing=await call('/api/wb-memory/memories')
 test('条目列表只读',()=>{assert.equal(listing.status,200);assert.equal(listing.data.total,3);assert.equal(readFileSync(memoryFile,'utf8'),mem)})
+for (const ws of ['missing', '../A']) {
+ const rejected = await call('/api/wb-memory/memories', { ws })
+ test('拒绝未知工作区 ' + ws, () => assert.equal(rejected.status, 400))
+}
+const other = await call('/api/wb-memory/memories', { ws: 'B' })
+test('B 条目不混入 A', () => { assert.equal(other.status, 200); assert.equal(other.data.total, 1); assert.ok(!JSON.stringify(other.data).includes('发布回滚')) })
 test('不再注册无 /api 前缀的旧地址',()=>assert.equal(routes.filter(r=>!r.path.startsWith('/api/')).length,0))
 for (const name of ['MEMORY.md.','MEMORY.md::$DATA']) {
  response=await call('/api/wb-memory/file',{method:'POST',body:{workspace:'A',path:name,content:'别名覆盖'}})

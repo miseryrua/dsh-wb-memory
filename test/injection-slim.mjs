@@ -307,15 +307,20 @@ test('带注释的 MEMORY.md 与手工去注释的等价 MEMORY.md 组装结果�
     meta('发布,回滚', '2026-01-02'), '## 发布回滚方案', '发布回滚需要先确认版本与告警。', '', '回滚后还要核对监控。', '',
     '## 夜间备份', '夜间备份每天03:20执行。', '',
   ].join('\n')
+  // 0.14.4 容量行按 MEMORY.md 原文字符数（与巡检判超、状态接口同口径），两份原文长度不同，比较时剔除该行并单独核对。
+  const cap = /\n- 长期记忆容量：MEMORY\.md (\d+) [^\n]*/
+  const noCap = (t) => t.replace(cap, '')
+  assert.equal(Number(cap.exec(assemble(dirty, '发布回滚', baseCfg).block)[1]), dirty.length)
+  assert.equal(Number(cap.exec(assemble(clean, '发布回滚', baseCfg).block)[1]), clean.length)
   for (const injectionMaxChars of [4000, 12000]) {
     const cfg = { ...baseCfg, injectionMaxChars }
-    const a = assemble(dirty, '发布回滚', cfg).block, b = assemble(clean, '发布回滚', cfg).block
+    const a = noCap(assemble(dirty, '发布回滚', cfg).block), b = noCap(assemble(clean, '发布回滚', cfg).block)
     assert.equal(a, b, JSON.stringify({ injectionMaxChars }))
     assert.ok(!a.includes('wb-distill-batch'))
     if (injectionMaxChars === 12000) assert.ok(a.includes('回滚后还要核对监控。'), '预算充足时正文完整保留')
   }
   // 无查询（摘要层）同样不变
-  assert.equal(assemble(dirty, '', baseCfg).block, assemble(clean, '', baseCfg).block)
+  assert.equal(noCap(assemble(dirty, '', baseCfg).block), noCap(assemble(clean, '', baseCfg).block))
 })
 
 // ---------------- 9. 返工：长度归一 / 指令措辞带偏 / 词边界伪 bigram / 无相关回落 ----------------
